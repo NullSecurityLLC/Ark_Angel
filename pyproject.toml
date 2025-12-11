@@ -1,0 +1,17 @@
+[project]
+name = "ark-angel"
+version = "0.1.0"
+description = "Ark Angel command-line tools"
+authors = [{ name = "Ark Angel Team" }]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.0",
+]
+
+[project.scripts]
+"ark-angel" = "ark_angel.cli:cli"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

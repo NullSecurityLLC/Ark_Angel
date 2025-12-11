@@ -49,3 +49,22 @@ Every action you take is your responsibility. We recommend operating under local
 
 ---
 
+
+## Quickstart
+
+1. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Install Ark Angel in editable mode so the CLI is available:
+   ```bash
+   pip install -e .
+   ```
+3. Run the CLI help to explore commands:
+   ```bash
+   ark-angel --help
+   ```
+
+## Documentation
+
+A high-level architecture overview is available at `docs/architecture.md`.
