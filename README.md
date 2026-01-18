@@ -68,3 +68,16 @@ Every action you take is your responsibility. We recommend operating under local
 ## Documentation
 
 A high-level architecture overview is available at `docs/architecture.md`.
+
+## Roadmap
+
+We are converting the architecture sketch into short, testable milestones with a
+minimal end-to-end workflow first. See the draft roadmap at `docs/roadmap.md`.
+
+## Planned Workflow (Happy Path)
+
+1. Create a case.
+2. Ingest a single data source for the subject.
+3. Enrich and tag findings (e.g., contact fields detected).
+4. Summarize key leads with AI assistance.
+5. Attach results to the case and export a brief report.
