@@ -9,11 +9,15 @@ the end-to-end investigation workflow intact.
 **Goal:** A single case can be created, populated with a single ingestion result,
 and summarized for a human reviewer.
 
-- Ingestion v0: one source adapter (CLI file import or a single public dataset).
-- Enrichment v0: rule-based tagging (e.g., "email present", "phone present").
-- AI Analysis v0: summarization of a single record (no clustering yet).
-- Geo v0: EXIF parsing for coordinates (if available).
-- Case Mgmt v0: create/list/update cases and attach findings.
+- [x] Ingestion v0: one source adapter (CLI file import). `FileIngestionSource`.
+- [x] Enrichment v0: rule-based tagging (e.g., "email present", "phone present").
+      `RuleBasedAnalyzer`.
+- [ ] AI Analysis v0: summarization of a single record (no clustering yet).
+      Currently only rule-based scoring/ranking exists in `report`.
+- [ ] Geo v0: EXIF parsing for coordinates (if available). `GeoResolver` interface
+      exists but has no concrete implementation yet.
+- [x] Case Mgmt v0: create/list/show cases and attach findings.
+      `FileCaseStore` (JSON-file-backed) plus `ark-angel case`/`ingest`/`enrich`/`report` CLI commands.
 
 ## Phase 2: Modular Tooling & Extensibility
 
