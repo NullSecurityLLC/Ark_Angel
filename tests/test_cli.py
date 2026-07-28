@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from click.testing import CliRunner
 
 from ark_angel import __version__
@@ -14,3 +16,32 @@ def test_cli_help() -> None:
     result = runner.invoke(cli, ["--help"])
     assert result.exit_code == 0
     assert "Ark Angel" in result.output
+
+
+def test_end_to_end_workflow() -> None:
+    with runner.isolated_filesystem():
+        Path("notes.txt").write_text("Reach out to jane@example.com\nNo contact info\n")
+
+        result = runner.invoke(cli, ["case", "create", "C1", "Missing Person Case"])
+        assert result.exit_code == 0, result.output
+
+        result = runner.invoke(cli, ["ingest", "C1", "notes.txt"])
+        assert result.exit_code == 0, result.output
+        assert "Ingested 2 evidence item(s)" in result.output
+
+        result = runner.invoke(cli, ["enrich", "C1"])
+        assert result.exit_code == 0, result.output
+        assert "Generated 1 lead(s)" in result.output
+
+        result = runner.invoke(cli, ["report", "C1"])
+        assert result.exit_code == 0, result.output
+        assert "email present" in result.output
+
+
+def test_case_list_is_sorted() -> None:
+    with runner.isolated_filesystem():
+        runner.invoke(cli, ["case", "create", "B", "Case B"])
+        runner.invoke(cli, ["case", "create", "A", "Case A"])
+
+        result = runner.invoke(cli, ["case", "list"])
+        assert result.output.splitlines() == ["A", "B"]

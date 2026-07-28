@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Ark Angel command-line tools"
 authors = [{ name = "Ark Angel Team" }]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 dependencies = [
     "click>=8.0",
 ]

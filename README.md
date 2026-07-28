@@ -74,10 +74,30 @@ A high-level architecture overview is available at `docs/architecture.md`.
 We are converting the architecture sketch into short, testable milestones with a
 minimal end-to-end workflow first. See the draft roadmap at `docs/roadmap.md`.
 
-## Planned Workflow (Happy Path)
+## Workflow (Happy Path)
 
-1. Create a case.
-2. Ingest a single data source for the subject.
-3. Enrich and tag findings (e.g., contact fields detected).
-4. Summarize key leads with AI assistance.
-5. Attach results to the case and export a brief report.
+The Phase 1 minimal workflow is implemented end-to-end via the CLI:
+
+```bash
+# 1. Create a case
+ark-angel case create C1 "Missing Person Case"
+
+# 2. Ingest a local text file as evidence (one item per line)
+ark-angel ingest C1 notes.txt
+
+# 3. Enrich evidence with rule-based tagging (email/phone detection)
+ark-angel enrich C1
+
+# 4. Review a brief report of the case's leads, ranked by score
+ark-angel report C1
+
+# List and inspect cases
+ark-angel case list
+ark-angel case show C1
+```
+
+Case data is stored as JSON files under `.ark_angel/cases` by default
+(override with `--data-dir`).
+
+Not yet implemented: AI-assisted summarization, geolocation/EXIF resolution,
+and additional ingestion source adapters — see `docs/roadmap.md`.
