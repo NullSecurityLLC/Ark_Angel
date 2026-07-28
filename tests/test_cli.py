@@ -38,6 +38,28 @@ def test_end_to_end_workflow() -> None:
         assert "email present" in result.output
 
 
+def test_ingest_and_enrich_record_provenance() -> None:
+    with runner.isolated_filesystem():
+        Path("notes.txt").write_text("Reach out to jane@example.com\n")
+
+        runner.invoke(cli, ["case", "create", "C1", "Case One"])
+        runner.invoke(cli, ["ingest", "C1", "notes.txt"])
+        runner.invoke(cli, ["enrich", "C1"])
+
+        from ark_angel.cases.store import FileCaseStore
+
+        case = FileCaseStore(".ark_angel/cases").get_case("C1")
+        assert case.evidence[0].metadata == {"source": "file"}
+        assert case.leads[0].metadata == {"produced_by": "rules"}
+
+
+def test_plugins_command_lists_registered_tools() -> None:
+    result = runner.invoke(cli, ["plugins"])
+    assert result.exit_code == 0, result.output
+    assert "file" in result.output
+    assert "rules" in result.output
+
+
 def test_case_list_is_sorted() -> None:
     with runner.isolated_filesystem():
         runner.invoke(cli, ["case", "create", "B", "Case B"])
