@@ -111,5 +111,49 @@ def report(store: FileCaseStore, case_id: str) -> None:
         click.echo(f"  [{analyzer.score_lead(lead):.1f}] {lead.summary}")
 
 
+@cli.command("ingest-image")
+@click.argument("case_id")
+@click.argument("image_file", type=click.Path(exists=True, dir_okay=False))
+@click.pass_obj
+def ingest_image(store: FileCaseStore, case_id: str, image_file: str) -> None:
+    """Extract EXIF metadata from an image and add to a case."""
+    from pathlib import Path
+
+    from ark_angel.ingest.image_source import ImageIngestionSource
+
+    leads = ImageIngestionSource().fetch_leads(image_file)
+    evidence = [
+        Evidence(identifier=lead.identifier, type="image-exif", content=lead.summary)
+        for lead in leads
+    ]
+    store.add_evidence(case_id, evidence)
+    store.add_leads(case_id, leads)
+    if evidence:
+        click.echo(f"Extracted {len(evidence)} EXIF item(s) from {Path(image_file).name}")
+    else:
+        click.echo("No EXIF metadata found in image.")
+
+
+@cli.command("username")
+@click.argument("case_id")
+@click.argument("username")
+@click.pass_obj
+def lookup_username(store: FileCaseStore, case_id: str, username: str) -> None:
+    """Search for a username across public platforms and add hits to a case."""
+    from ark_angel.ingest.username_source import SITES, UsernameIngestionSource
+
+    click.echo(f"Searching {len(SITES)} platforms for {username!r}...")
+    leads = UsernameIngestionSource().fetch_leads(username)
+    evidence = [
+        Evidence(identifier=lead.identifier, type="username-hit", content=lead.summary)
+        for lead in leads
+    ]
+    store.add_evidence(case_id, evidence)
+    store.add_leads(case_id, leads)
+    click.echo(f"Found {len(leads)} match(es)")
+    for lead in leads:
+        click.echo(f"  {lead.summary}")
+
+
 if __name__ == "__main__":
     cli()
