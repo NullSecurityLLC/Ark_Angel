@@ -33,11 +33,14 @@ class Lead:
         identifier: Unique ID for the lead.
         summary: Human readable summary of the lead.
         evidence_ids: Identifiers for evidence items that support the lead.
+        metadata: Optional structured metadata, e.g. provenance recording
+            which tool produced this lead.
     """
 
     identifier: str
     summary: str
     evidence_ids: List[str] = field(default_factory=list)
+    metadata: Optional[dict[str, Any]] = None
 
 
 @dataclass

@@ -6,6 +6,7 @@ from typing import Sequence
 
 from ark_angel.analysis.base import Analyzer
 from ark_angel.models import Case, Evidence, Lead
+from ark_angel.registry import analyzers
 
 EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 PHONE_PATTERN = re.compile(r"\+?\d[\d\-.\s]{7,}\d")
@@ -13,6 +14,7 @@ PHONE_PATTERN = re.compile(r"\+?\d[\d\-.\s]{7,}\d")
 _TAG_WEIGHTS = {"email": 2.0, "phone": 1.0}
 
 
+@analyzers.register("rules")
 class RuleBasedAnalyzer(Analyzer):
     """Tags evidence containing emails or phone numbers, generating leads."""
 

@@ -23,9 +23,15 @@ and summarized for a human reviewer.
 
 **Goal:** A contributor can add a new tool without modifying core logic.
 
-- Plugin interface: drop-in registry for new ingestion/enrichment tools.
-- Configurable pipelines: enable/disable modules per case.
-- Provenance tracking: record which tool produced each artifact.
+- [x] Plugin interface: drop-in registry for new ingestion/enrichment tools.
+      `ark_angel.registry.Registry`, with `ingestion_sources` and `analyzers`
+      registries. New tools register themselves via `@registry.register("name")`
+      and are selectable in the CLI with `--source`/`--analyzer`
+      (see `ark-angel plugins` to list what's registered).
+- [ ] Configurable pipelines: enable/disable modules per case.
+- [x] Provenance tracking: record which tool produced each artifact.
+      `Evidence.metadata["source"]` and `Lead.metadata["produced_by"]` are
+      stamped by the CLI based on the selected plugin name.
 
 ## Phase 3: Investigation Collaboration
 

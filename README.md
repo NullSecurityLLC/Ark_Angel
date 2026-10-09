@@ -99,5 +99,24 @@ ark-angel case show C1
 Case data is stored as JSON files under `.ark_angel/cases` by default
 (override with `--data-dir`).
 
+## Adding Tools
+
+Ingestion sources and analyzers are looked up through a plugin registry
+(`ark_angel.registry`), so new tools can be added without touching the CLI or
+core pipeline code. Register an implementation with a decorator:
+
+```python
+from ark_angel.ingest.base import IngestionSource
+from ark_angel.registry import ingestion_sources
+
+@ingestion_sources.register("my-source")
+class MySource(IngestionSource):
+    def fetch_leads(self, identifier):
+        ...
+```
+
+Then select it at runtime: `ark-angel ingest C1 notes.txt --source my-source`.
+Run `ark-angel plugins` to list what's currently registered.
+
 Not yet implemented: AI-assisted summarization, geolocation/EXIF resolution,
 and additional ingestion source adapters — see `docs/roadmap.md`.
