@@ -54,8 +54,12 @@ def test_get_unknown_name_raises_key_error() -> None:
 
 def test_builtin_ingestion_source_and_analyzer_are_registered() -> None:
     import ark_angel.analysis.rules  # noqa: F401
+    import ark_angel.geo.exif_resolver  # noqa: F401
     import ark_angel.ingest.file_source  # noqa: F401
-    from ark_angel.registry import analyzers, ingestion_sources
+    import ark_angel.ingest.image_source  # noqa: F401
+    import ark_angel.ingest.username_source  # noqa: F401
+    from ark_angel.registry import analyzers, geo_resolvers, ingestion_sources
 
-    assert "file" in ingestion_sources.names()
-    assert "rules" in analyzers.names()
+    assert ingestion_sources.names() == ["file", "image", "username"]
+    assert analyzers.names() == ["rules"]
+    assert geo_resolvers.names() == ["exif"]

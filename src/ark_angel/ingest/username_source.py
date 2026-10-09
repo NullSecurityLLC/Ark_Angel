@@ -7,6 +7,7 @@ import requests
 
 from ark_angel.ingest.base import IngestionSource
 from ark_angel.models import Lead
+from ark_angel.registry import ingestion_sources
 
 _TIMEOUT = 10
 _HEADERS = {"User-Agent": "ArkAngel-OSINT/0.1 (open-source missing persons research tool)"}
@@ -25,6 +26,7 @@ SITES: dict[str, str] = {
 }
 
 
+@ingestion_sources.register("username")
 class UsernameIngestionSource(IngestionSource):
     """Checks a username against known platforms and returns leads for matches."""
 

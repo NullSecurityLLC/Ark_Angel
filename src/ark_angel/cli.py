@@ -4,10 +4,13 @@ from importlib.metadata import version
 import click
 
 import ark_angel.analysis.rules  # noqa: F401  (registers the "rules" analyzer)
+import ark_angel.geo.exif_resolver  # noqa: F401  (registers the "exif" geo resolver)
 import ark_angel.ingest.file_source  # noqa: F401  (registers the "file" ingestion source)
+import ark_angel.ingest.image_source  # noqa: F401  (registers the "image" ingestion source)
+import ark_angel.ingest.username_source  # noqa: F401  (registers the "username" ingestion source)
 from ark_angel.cases.store import FileCaseStore
 from ark_angel.models import Case, Evidence
-from ark_angel.registry import analyzers, ingestion_sources
+from ark_angel.registry import analyzers, geo_resolvers, ingestion_sources
 
 DEFAULT_DATA_DIR = ".ark_angel/cases"
 
@@ -150,13 +153,18 @@ def ingest_image(store: FileCaseStore, case_id: str, image_file: str) -> None:
     """Extract EXIF metadata from an image and add to a case."""
     from pathlib import Path
 
-    from ark_angel.ingest.image_source import ImageIngestionSource
-
-    leads = ImageIngestionSource().fetch_leads(image_file)
+    leads = ingestion_sources.create("image").fetch_leads(image_file)
     evidence = [
-        Evidence(identifier=lead.identifier, type="image-exif", content=lead.summary)
+        Evidence(
+            identifier=lead.identifier,
+            type="image-exif",
+            content=lead.summary,
+            metadata={"source": "image"},
+        )
         for lead in leads
     ]
+    for lead in leads:
+        lead.metadata = {"produced_by": "image"}
     store.add_evidence(case_id, evidence)
     store.add_leads(case_id, leads)
     if evidence:
@@ -171,14 +179,21 @@ def ingest_image(store: FileCaseStore, case_id: str, image_file: str) -> None:
 @click.pass_obj
 def lookup_username(store: FileCaseStore, case_id: str, username: str) -> None:
     """Search for a username across public platforms and add hits to a case."""
-    from ark_angel.ingest.username_source import SITES, UsernameIngestionSource
+    from ark_angel.ingest.username_source import SITES
 
     click.echo(f"Searching {len(SITES)} platforms for {username!r}...")
-    leads = UsernameIngestionSource().fetch_leads(username)
+    leads = ingestion_sources.create("username").fetch_leads(username)
     evidence = [
-        Evidence(identifier=lead.identifier, type="username-hit", content=lead.summary)
+        Evidence(
+            identifier=lead.identifier,
+            type="username-hit",
+            content=lead.summary,
+            metadata={"source": "username"},
+        )
         for lead in leads
     ]
+    for lead in leads:
+        lead.metadata = {"produced_by": "username"}
     store.add_evidence(case_id, evidence)
     store.add_leads(case_id, leads)
     click.echo(f"Found {len(leads)} match(es)")
@@ -188,9 +203,10 @@ def lookup_username(store: FileCaseStore, case_id: str, username: str) -> None:
 
 @cli.command("plugins")
 def list_plugins() -> None:
-    """List registered ingestion sources and analyzers."""
+    """List registered ingestion sources, analyzers, and geo resolvers."""
     click.echo("Ingestion sources: " + ", ".join(ingestion_sources.names()))
     click.echo("Analyzers: " + ", ".join(analyzers.names()))
+    click.echo("Geo resolvers: " + ", ".join(geo_resolvers.names()))
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from ark_angel.geo.base import GeoResolver
 from ark_angel.models import Location
+from ark_angel.registry import geo_resolvers
 
 
 def _dms_to_decimal(dms: tuple, ref: str) -> float:
@@ -13,6 +14,7 @@ def _dms_to_decimal(dms: tuple, ref: str) -> float:
     return -val if ref in ("S", "W") else val
 
 
+@geo_resolvers.register("exif")
 class ExifGeoResolver(GeoResolver):
     """Resolves a GPS location directly from an image file's EXIF data."""
 

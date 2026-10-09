@@ -6,6 +6,7 @@ from typing import Sequence
 
 from ark_angel.ingest.base import IngestionSource
 from ark_angel.models import Lead
+from ark_angel.registry import ingestion_sources
 
 
 def _load_exif(image_path: str) -> dict:
@@ -30,6 +31,7 @@ def _dms_to_decimal(dms: tuple, ref: str) -> float:
     return -val if ref in ("S", "W") else val
 
 
+@ingestion_sources.register("image")
 class ImageIngestionSource(IngestionSource):
     """Extracts EXIF metadata from an image file and generates leads."""
 

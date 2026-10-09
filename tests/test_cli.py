@@ -56,8 +56,52 @@ def test_ingest_and_enrich_record_provenance() -> None:
 def test_plugins_command_lists_registered_tools() -> None:
     result = runner.invoke(cli, ["plugins"])
     assert result.exit_code == 0, result.output
-    assert "file" in result.output
-    assert "rules" in result.output
+    assert "Ingestion sources: file, image, username" in result.output
+    assert "Analyzers: rules" in result.output
+    assert "Geo resolvers: exif" in result.output
+
+
+def test_username_command_records_provenance() -> None:
+    from unittest.mock import MagicMock, patch
+
+    from ark_angel.cases.store import FileCaseStore
+
+    response = MagicMock()
+    response.status_code = 200
+    with runner.isolated_filesystem():
+        runner.invoke(cli, ["case", "create", "C1", "Case One"])
+        with patch("ark_angel.ingest.username_source.requests.get", return_value=response):
+            result = runner.invoke(cli, ["username", "C1", "janedoe"])
+        assert result.exit_code == 0, result.output
+
+        case = FileCaseStore(".ark_angel/cases").get_case("C1")
+        assert case.evidence and case.leads
+        assert all(item.metadata == {"source": "username"} for item in case.evidence)
+        assert all(lead.metadata == {"produced_by": "username"} for lead in case.leads)
+
+
+def test_ingest_image_command_records_provenance() -> None:
+    from unittest.mock import patch
+
+    import piexif
+
+    from ark_angel.cases.store import FileCaseStore
+
+    fake_exif = {
+        "GPS": {},
+        "0th": {piexif.ImageIFD.Make: b"Apple", piexif.ImageIFD.Model: b"iPhone 14"},
+        "Exif": {},
+    }
+    with runner.isolated_filesystem():
+        Path("photo.jpg").write_bytes(b"not a real image")
+        runner.invoke(cli, ["case", "create", "C1", "Case One"])
+        with patch("ark_angel.ingest.image_source._load_exif", return_value=fake_exif):
+            result = runner.invoke(cli, ["ingest-image", "C1", "photo.jpg"])
+        assert result.exit_code == 0, result.output
+
+        case = FileCaseStore(".ark_angel/cases").get_case("C1")
+        assert case.evidence[0].metadata == {"source": "image"}
+        assert case.leads[0].metadata == {"produced_by": "image"}
 
 
 def test_case_list_is_sorted() -> None:
