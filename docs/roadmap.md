@@ -1,45 +1,42 @@
-# ArkAngel Roadmap (Draft)
+# ArkAngel Roadmap
 
-This roadmap turns the high-level architecture into small, demonstrable milestones.
-Each phase should remain small enough to deliver in a short iteration while keeping
-the end-to-end investigation workflow intact.
+ArkAngel is pattern recognition for case evidence, with no AI/LLM layer. Each
+phase should stay small enough to ship in a short iteration without breaking the
+end-to-end workflow.
 
-## Phase 1: Minimal End-to-End Workflow
+## Phase 1: Minimal end-to-end workflow (done)
 
-**Goal:** A single case can be created, populated with a single ingestion result,
-and summarized for a human reviewer.
+- [x] Case management: create/list/show, JSON-file store with validated IDs.
+- [x] Ingestion: text files, image EXIF, username lookups.
+- [x] Geo v0: EXIF GPS parsing (`geo/exif.py`, `ExifGeoResolver`).
+- [x] Enrichment v0: per-item rule tagging.
 
-- [x] Ingestion v0: one source adapter (CLI file import). `FileIngestionSource`.
-- [x] Enrichment v0: rule-based tagging (e.g., "email present", "phone present").
-      `RuleBasedAnalyzer`.
-- [ ] AI Analysis v0: summarization of a single record (no clustering yet).
-      Currently only rule-based scoring/ranking exists in `report`.
-- [ ] Geo v0: EXIF parsing for coordinates (if available). `GeoResolver` interface
-      exists but has no concrete implementation yet.
-- [x] Case Mgmt v0: create/list/show cases and attach findings.
-      `FileCaseStore` (JSON-file-backed) plus `ark-angel case`/`ingest`/`enrich`/`report` CLI commands.
+## Phase 1.5: Lead surfacing (done, powers `ark-angel demo`)
 
-## Phase 2: Modular Tooling & Extensibility
+- [x] Entity extraction and normalization (phone, email, handle, plate, URL, coords, dates).
+- [x] Cross-source correlation with explainable scores.
+- [x] Geo clustering (haversine) and timeline.
+- [x] `pivot`: feed extracted handles into username lookups (opt-in network).
+- [x] Reports: text, Markdown, JSON, self-contained HTML case file.
+- [x] Idempotent `enrich`, clean CLI errors.
 
-**Goal:** A contributor can add a new tool without modifying core logic.
+## Phase 2: More signal, less noise
 
-- Plugin interface: drop-in registry for new ingestion/enrichment tools.
-- Configurable pipelines: enable/disable modules per case.
-- Provenance tracking: record which tool produced each artifact.
+- More ingestion adapters: CSV/tip-line exports, email (.eml), chat exports.
+- Free-text place names to coordinates via an offline gazetteer, so "Union
+  Station" can join a geo cluster.
+- Time-window correlation: entities that co-occur within N hours.
+- Co-occurrence links: two entities that keep appearing in the same items.
+- Per-case scoring weights and an "ignore this entity" list (e.g. the tip line's own number).
 
-## Phase 3: Investigation Collaboration
+## Phase 3: Investigation collaboration
 
-**Goal:** Multi-user workflows with auditability.
+- Notes and manual tagging on leads; mark leads verified or dismissed.
+- Provenance on every artifact (which tool, when, with what input).
+- Shareable exports (PDF) for partners and law enforcement.
 
-- Timeline of events and findings per case.
-- Notes and tagging for human investigators.
-- Exportable reports (PDF/Markdown) for sharing with partners.
+## Phase 4: Scale
 
-## Phase 4: Advanced Intelligence
-
-**Goal:** Deeper analysis on aggregated findings.
-
-- Entity clustering across sources.
-- Relationship graph exploration.
-- Risk scoring and confidence indicators.
-
+- Relationship graph view across entities.
+- SQLite-backed store for large cases.
+- Plugin registry for third-party ingestion and extraction tools.

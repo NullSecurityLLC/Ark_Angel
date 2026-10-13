@@ -1,7 +1,7 @@
 [project]
 name = "ark-angel"
 version = "0.1.0"
-description = "Ark Angel command-line tools"
+description = "Pattern recognition that surfaces leads in missing-person case evidence"
 authors = [{ name = "Ark Angel Team" }]
 readme = "README.md"
 requires-python = ">=3.9"
@@ -18,3 +18,9 @@ dependencies = [
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ark_angel = ["demo_data/*"]

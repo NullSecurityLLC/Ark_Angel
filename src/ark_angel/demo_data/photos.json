@@ -1,0 +1,11 @@
+{
+  "_note": "Synthetic EXIF for photos generated at demo run time.",
+  "photos": [
+    {"name": "station_platform.jpg", "latitude": 39.7524, "longitude": -104.9996,
+     "timestamp": "2026:09:28 08:02:00", "make": "Apple", "model": "iPhone 13"},
+    {"name": "bridge_night.jpg", "latitude": 39.7493, "longitude": -104.9989,
+     "timestamp": "2026:10:01 03:10:00", "make": "Google", "model": "Pixel 7"},
+    {"name": "trailhead_old.jpg", "latitude": 40.015, "longitude": -105.2705,
+     "timestamp": "2026:09:14 16:20:00", "make": "Samsung", "model": "Galaxy S21"}
+  ]
+}

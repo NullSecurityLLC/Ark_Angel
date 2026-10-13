@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 *.egg-info/
 .ark_angel/
+ark_angel_demo.html
+build/
