@@ -8,6 +8,7 @@ from typing import Iterable, Optional
 from ark_angel.analysis.correlate import CaseAnalysis, analyze_case
 from ark_angel.analysis.rules import RuleBasedAnalyzer
 from ark_angel.cases.store import FileCaseStore
+from ark_angel.ingest.csv_source import CsvImport, CsvTipSource
 from ark_angel.ingest.file_source import FileIngestionSource
 from ark_angel.ingest.image_source import ImageIngestionSource
 from ark_angel.ingest.username_source import UsernameHit, hit_records
@@ -125,3 +126,13 @@ def review_lead(store: FileCaseStore, case_id: str, ref: str, status: str, note:
     case.reviews.append(review)
     store.save_case(case)
     return item, review
+
+
+def ingest_csv(store: FileCaseStore, case_id: str, path: str | Path, source: CsvTipSource,
+               dry_run: bool = False) -> CsvImport:
+    """Add each row of a tip-line export as an evidence item (or just preview with ``dry_run``)."""
+    store.get_case(case_id)
+    result = source.load(path)
+    if not dry_run:
+        store.add_evidence(case_id, result.evidence)
+    return result

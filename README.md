@@ -22,6 +22,7 @@ There is no AI model in the loop. Every lead comes from pattern matching you can
 
 ## What it does
 
+- **Tip-line import**: CSV/TSV exports become one evidence item per row. Column roles are guessed from the headers (tip text, id, time received, lat/lon) and can be overridden. Every other column, like a callback number or caller location, is still scanned for leads. It copes with Excel BOMs, `;`/tab delimiters and US or day-first dates.
 - **Entity extraction**: phones, emails, handles, plates, URLs, coordinates and dates pulled from free text and normalized, so `(303) 555-0147`, `303.555.0147` and `+1 303 555 0147` are the same number.
 - **Cross-source correlation**: anything that shows up in more than one evidence item becomes a lead, and agreement across *different* sources (a tip and phone records and a social post) ranks higher than repetition within one.
 - **Geo clustering**: EXIF GPS from photos and coordinates dropped into tips are clustered by distance, so three sightings within a few hundred metres surface together.
@@ -91,7 +92,8 @@ named. The noise in the data (a psychic, an unrelated post) stays at the bottom.
 ark-angel case create C1 "Missing Person Case"
 
 # Evidence in: text files are one item per line; photos contribute EXIF GPS/time/device
-ark-angel ingest C1 tips.txt
+ark-angel ingest-csv C1 hotline_export.csv --dry-run   # check the guessed columns first
+ark-angel ingest-csv C1 hotline_export.csv             # or: --text Narrative --when "Date Received" --dayfirst
 ark-angel ingest C1 investigator_notes.txt
 ark-angel ingest-image C1 photo.jpg
 

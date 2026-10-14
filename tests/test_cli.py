@@ -179,3 +179,31 @@ def test_dismissed_lead_resurfaces_after_new_evidence(tmp_path: Path) -> None:
     _run(tmp_path, "enrich", "C1")
     listing = _run(tmp_path, "lead", "list", "C1").output
     assert "RESURFACED" in listing and "corr-phone-3035550147" in listing
+
+
+def test_csv_import_dry_run_then_real_import_is_idempotent(tmp_path: Path) -> None:
+    export = tmp_path / "hotline.csv"
+    export.write_text("Tip #,Received,Narrative\nT-1,10/01/2026 4:45 PM,call 303-555-0147\n"
+                      "T-2,10/02/2026 9:00 AM,again (303) 555-0147\n")
+    _run(tmp_path, "case", "create", "C1", "t")
+
+    preview = _run(tmp_path, "ingest-csv", "C1", str(export), "--dry-run")
+    assert preview.exit_code == 0, preview.output
+    assert "Would import 2 tip(s)" in preview.output and "hotline:T-1:" in preview.output
+    assert "evidence: 0" in _run(tmp_path, "case", "show", "C1").output
+
+    for _ in range(2):
+        assert _run(tmp_path, "ingest", "C1", str(export)).exit_code == 0  # .csv routes to the CSV importer
+    assert "evidence: 2" in _run(tmp_path, "case", "show", "C1").output
+
+    _run(tmp_path, "enrich", "C1")
+    assert "Phone 3035550147 appears in 2 items" in _run(tmp_path, "report", "C1").output
+
+
+def test_csv_import_errors_are_clean(tmp_path: Path) -> None:
+    export = tmp_path / "odd.csv"
+    export.write_text("foo,bar\n1,2\n")
+    _run(tmp_path, "case", "create", "C1", "t")
+    result = _run(tmp_path, "ingest-csv", "C1", str(export))
+    assert result.exit_code == 1 and "--text" in result.output
+    assert _run(tmp_path, "ingest-csv", "C1", str(export), "--text", "foo", "--dry-run").exit_code == 0

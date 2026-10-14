@@ -10,6 +10,7 @@ from ark_angel.analysis.places import suggest_places
 from ark_angel import pipeline
 from ark_angel.cases.store import FileCaseStore
 from ark_angel.geo.exif import decimal_to_dms
+from ark_angel.ingest.csv_source import CsvTipSource
 from ark_angel.ingest.username_source import UsernameHit
 from ark_angel.models import Case
 
@@ -18,7 +19,7 @@ DEMO_TITLE = "Riley Tamsin (synthetic demo case)"
 DEMO_NOTICE = ("Synthetic demo. Every person, number, handle and photo in this case is invented, "
                "and the username lookups and investigator reviews are simulated.")
 DEMO_REVIEWER = "Det. Demo (simulated)"
-TEXT_SOURCES = ("tips.txt", "investigator_notes.txt", "social_posts.txt")
+TEXT_SOURCES = ("investigator_notes.txt", "social_posts.txt")
 
 
 def _data_text(name: str) -> str:
@@ -57,6 +58,10 @@ def build_demo_case(store: FileCaseStore, workdir: Path, case_id: str = DEMO_CAS
 
     text_dir = workdir / "text"
     text_dir.mkdir(parents=True, exist_ok=True)
+    export = text_dir / "tips.csv"
+    export.write_text(_data_text("tips.csv"))
+    tips = pipeline.ingest_csv(store, case_id, export, CsvTipSource())
+    log(f"  imported {len(tips.evidence):>2} tips from the tip-line export tips.csv ({tips.mapping.describe()})")
     for name in TEXT_SOURCES:
         path = text_dir / name
         path.write_text(_data_text(name))

@@ -16,6 +16,9 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
 
 - **ingest/**: source adapters that produce `Evidence` (and sometimes leads).
   - `file_source.py`: one evidence item per non-blank line of a text file.
+  - `csv_source.py`: tip-line exports, one evidence item per row. It guesses
+    column roles from headers, parses US, day-first, ISO and named-month dates,
+    and keeps the other columns as `Header: value` text.
   - `image_source.py`: EXIF GPS, capture time and device, stored in evidence metadata.
   - `username_source.py`: parallel public-platform checks with per-site
     "not found" markers. Hits are labelled unverified.
@@ -26,7 +29,7 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
     clustering, timeline, and explainable scoring. This is the core.
   - `places.py`: gazetteer matching (`PlaceMatcher`, longest name first,
     whole words) and `suggest_places` for place names that aren't resolved yet.
-  - `rules.py`: per-item tagging ("phone present in tips.txt:3").
+  - `rules.py`: per-item tagging ("phone present in tips:T-1003").
 - **geo/**: shared EXIF helpers (`exif.py`), `ExifGeoResolver`, and the opt-in
   Nominatim lookup (`nominatim.py`), which is the only network call in place handling.
 - **cases/**: `FileCaseStore`, one JSON file per case (evidence, leads, the
