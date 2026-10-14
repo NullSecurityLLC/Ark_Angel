@@ -1,8 +1,7 @@
 # ArkAngel Roadmap
 
-ArkAngel is pattern recognition for case evidence, with no AI/LLM layer. Each
-phase should stay small enough to ship in a short iteration without breaking the
-end-to-end workflow.
+ArkAngel is pattern recognition for case evidence. Each phase should stay small
+enough to ship in a short iteration without breaking the end-to-end workflow.
 
 ## Phase 1: Minimal end-to-end workflow (done)
 
