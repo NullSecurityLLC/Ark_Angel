@@ -15,6 +15,7 @@ on:
     paths:
       - "pyproject.toml"
       - "packaging/**"
+      - "scripts/build_icons.py"
       - "src/ark_angel/__init__.py"
       - ".github/workflows/release.yml"
   workflow_dispatch:
@@ -65,12 +66,17 @@ jobs:
           - os: ubuntu-latest
             label: linux-x86_64
             binary: ark-angel
+            icon: ""  # Linux executables don't carry icons
           - os: windows-latest
             label: windows-x86_64
             binary: ark-angel.exe
+            icon: packaging/icons/ark-angel.ico
           - os: macos-latest
             label: macos-arm64
             binary: ark-angel
+            # PyInstaller only applies --icon to .app bundles on macOS, so a command-line executable
+            # still shows Finder's generic icon. Passed anyway, ready for a future .app/DMG build.
+            icon: packaging/icons/ark-angel.icns
     defaults:
       run:
         shell: bash
@@ -83,7 +89,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install . pyinstaller==6.22.3
-          pyinstaller --onefile --name ark-angel --collect-data ark_angel \
+          icon=()
+          if [ -n "${{ matrix.icon }}" ]; then icon=(--icon "$GITHUB_WORKSPACE/${{ matrix.icon }}"); fi
+          pyinstaller --onefile --name ark-angel --collect-data ark_angel "${icon[@]}" \
             --distpath dist --workpath build/pyinstaller --specpath build packaging/ark_angel_entry.py
       - name: Smoke-test the executable
         run: |

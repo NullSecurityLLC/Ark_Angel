@@ -9,6 +9,19 @@ from typing import Any, Optional
 
 from ark_angel.report.text import review_line
 
+
+def _favicon() -> str:
+    """The ArkAngel mark as a data: URI, so the report's browser tab shows it offline."""
+    import base64
+    from importlib import resources
+
+    try:
+        data = (resources.files("ark_angel") / "report" / "favicon.png").read_bytes()
+    except (FileNotFoundError, OSError):
+        return ""
+    return f'<link rel="icon" type="image/png" href="data:image/png;base64,{base64.b64encode(data).decode()}">'
+
+
 _CSS = """
 :root{
   --bg:#14120e;--surface:#1c1a15;--surface-2:#25221b;--text:#ece6d8;--muted:#a59c88;
@@ -436,6 +449,7 @@ def render_html(report: dict[str, Any], notice: Optional[str] = None) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_e(case["title"])} · ArkAngel</title>
+{_favicon()}
 <style>{_CSS}</style>
 </head>
 <body>

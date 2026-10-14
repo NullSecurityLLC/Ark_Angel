@@ -1,5 +1,7 @@
 # ArkAngel
 
+<p align="center"><img src="packaging/icons/ark-angel-512.png" width="128" height="128" alt="ArkAngel mark: an amber map pin under a halo"></p>
+
 ```text
     _         _        _                     _
    / \   _ __| | __   / \   _ __   __ _  ___| |
