@@ -1,0 +1,7 @@
+{
+  "_note": "SIMULATED username lookup results for the offline demo. Not real accounts.",
+  "hits": [
+    {"site": "GitHub", "username": "rt_demo_owl", "url": "https://github.com/rt_demo_owl"},
+    {"site": "Reddit", "username": "rt_demo_owl", "url": "https://www.reddit.com/user/rt_demo_owl"}
+  ]
+}

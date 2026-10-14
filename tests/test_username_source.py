@@ -6,9 +6,10 @@ import pytest
 from ark_angel.ingest.username_source import SITES, UsernameIngestionSource
 
 
-def _resp(status: int) -> MagicMock:
+def _resp(status: int, text: str = "<html>profile</html>") -> MagicMock:
     r = MagicMock()
     r.status_code = status
+    r.text = text
     return r
 
 
@@ -55,3 +56,29 @@ def test_lead_identifiers_are_unique():
 
     identifiers = [l.identifier for l in leads]
     assert len(identifiers) == len(set(identifiers))
+
+
+def test_absent_marker_on_200_is_not_a_hit():
+    def fake_get(url, **kwargs):
+        if "t.me" in url:
+            return _resp(200, "<title>Telegram Messenger</title>")
+        return _resp(404)
+
+    with patch("ark_angel.ingest.username_source.requests.get", side_effect=fake_get):
+        leads = UsernameIngestionSource().fetch_leads("ghostuser")
+
+    assert leads == []
+
+
+def test_hits_use_profile_url_and_are_labelled_unverified():
+    def fake_get(url, **kwargs):
+        if "gitlab.com/api" in url:
+            return _resp(200, '[{"id": 1, "username": "someone"}]')
+        return _resp(404)
+
+    with patch("ark_angel.ingest.username_source.requests.get", side_effect=fake_get):
+        leads = UsernameIngestionSource().fetch_leads("someone")
+
+    assert len(leads) == 1
+    assert "https://gitlab.com/someone" in leads[0].summary
+    assert "unverified" in leads[0].summary
