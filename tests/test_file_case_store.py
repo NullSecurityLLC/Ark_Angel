@@ -106,3 +106,13 @@ def test_delete_case(tmp_path: Path) -> None:
     store.create_case(Case(identifier="C1", title="Case One"))
     store.delete_case("C1")
     assert store.list_cases() == []
+
+
+def test_places_round_trip(tmp_path: Path) -> None:
+    from ark_angel.models import Place
+
+    store = FileCaseStore(tmp_path)
+    place = Place("Union Station", 39.7527, -104.9997, aliases=["the station"], radius_m=200, source="import")
+    store.create_case(Case(identifier="C1", title="t", places=[place]))
+
+    assert FileCaseStore(tmp_path).get_case("C1").places == [place]

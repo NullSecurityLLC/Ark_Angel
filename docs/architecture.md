@@ -24,10 +24,13 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
     handles, plates, URLs, coordinates and dates.
   - `correlate.py`: entity index across all evidence, haversine geo
     clustering, timeline, and explainable scoring. This is the core.
+  - `places.py`: gazetteer matching (`PlaceMatcher`, longest name first,
+    whole words) and `suggest_places` for place names that aren't resolved yet.
   - `rules.py`: per-item tagging ("phone present in tips.txt:3").
-- **geo/**: shared EXIF helpers (`exif.py`) and `ExifGeoResolver`.
-- **cases/**: `FileCaseStore`, one JSON file per case with validated IDs and
-  upsert-by-identifier writes.
+- **geo/**: shared EXIF helpers (`exif.py`), `ExifGeoResolver`, and the opt-in
+  Nominatim lookup (`nominatim.py`), which is the only network call in place handling.
+- **cases/**: `FileCaseStore`, one JSON file per case (evidence, leads and the
+  case gazetteer) with validated IDs and upsert-by-identifier writes.
 - **report/**: `build.py` assembles a plain-data report that the text,
   Markdown, JSON and self-contained HTML renderers share.
 - **pipeline.py**: the ingest and enrich steps shared by the CLI and the demo.
@@ -41,5 +44,11 @@ correlated entity:  kind_weight × evidence_items + 2 × (distinct_sources − 1
 location cluster:   2.5 × evidence_items + 2 × (distinct_sources − 1)
 ```
 
-Kind weights: phone, email and plate 3; handle 2.5; URL 1.5. Every lead stores
+Kind weights: phone, email and plate 3; handle 2.5; coarse place 2; URL 1.5.
+
+Places come in two sizes. A precise place (radius up to the 1 km cluster
+radius, e.g. a station) turns each mention into a geo point, so it joins
+clusters next to photos and dropped pins. A coarse place (a city) is too vague
+to be a point. It becomes a `place` entity instead, and geotagged evidence
+inside its radius counts as another mention of it. Every lead stores
 the reasons behind its score, and the reports show them.

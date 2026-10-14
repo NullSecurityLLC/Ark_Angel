@@ -19,12 +19,14 @@ end-to-end workflow.
 - [x] `pivot`: feed extracted handles into username lookups (opt-in network).
 - [x] Reports: text, Markdown, JSON, self-contained HTML case file.
 - [x] Idempotent `enrich`, clean CLI errors.
+- [x] Place names: per-case gazetteer, CSV import, `place suggest`, opt-in
+      Nominatim lookup. Named places join geo clusters; cities collect geotagged
+      evidence inside them.
 
 ## Phase 2: More signal, less noise
 
 - More ingestion adapters: CSV/tip-line exports, email (.eml), chat exports.
-- Free-text place names to coordinates via an offline gazetteer, so "Union
-  Station" can join a geo cluster.
+- Bundled offline gazetteer (e.g. GeoNames cities) so towns resolve without manual entry.
 - Time-window correlation: entities that co-occur within N hours.
 - Co-occurrence links: two entities that keep appearing in the same items.
 - Per-case scoring weights and an "ignore this entity" list (e.g. the tip line's own number).

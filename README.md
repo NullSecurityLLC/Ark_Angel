@@ -25,6 +25,7 @@ There is no AI model in the loop. Every lead comes from pattern matching you can
 - **Entity extraction**: phones, emails, handles, plates, URLs, coordinates and dates pulled from free text and normalized, so `(303) 555-0147`, `303.555.0147` and `+1 303 555 0147` are the same number.
 - **Cross-source correlation**: anything that shows up in more than one evidence item becomes a lead, and agreement across *different* sources (a tip and phone records and a social post) ranks higher than repetition within one.
 - **Geo clustering**: EXIF GPS from photos and coordinates dropped into tips are clustered by distance, so three sightings within a few hundred metres surface together.
+- **Place names**: each case has a gazetteer mapping names like "Union Station" or "the station" to coordinates. Tips that only *name* a spot join the same location cluster as the photos taken there. A vague "she's in Boulder" gets linked to any photo geotagged inside Boulder. `place suggest` lists the place names your evidence uses that the gazetteer doesn't cover yet.
 - **Timeline**: every dated item, in order, with the most recent activity flagged.
 - **Username lookup**: check a handle against public platforms (opt-in, network required). Hits are labelled unverified.
 - **Reports**: terminal, Markdown, JSON, or a self-contained HTML case file that opens offline.
@@ -64,16 +65,18 @@ engine pull them out, ranked:
 
 ```text
 Top leads
-  1. [ 21.0] Handle rt_demo_owl appears in 6 items across 4 sources
-  2. [ 13.0] Phone 3035550147 appears in 3 items across 3 sources
+  1. [ 23.5] Location cluster around Union Station: 7 items within 295 m
+              named places: Union Station, Cherry Creek Trail
+  2. [ 21.0] Handle rt_demo_owl appears in 6 items across 4 sources
+  3. [ 13.0] Phone 3035550147 appears in 3 items across 3 sources
               written 3 different ways: (303) 555-0147 | 303-555-0147 | 303.555.0147
-  3. [ 11.0] Plate ABC1234 appears in 3 items across 2 sources
-  4. [  9.5] Location cluster near 39.75020,-104.99900: 3 items within 250 m
+  4. [ 11.0] Plate ABC1234 appears in 3 items across 2 sources
   5. [  8.0] Email sam.k.demo@example.org appears in 2 items across 2 sources
 ```
 
-The noise in the data (a vague "she's in Boulder" call, a psychic, an unrelated
-post) stays at the bottom.
+The cluster at the top is a dropped pin, two geotagged photos, and four tips,
+notes and posts that only name the spot. The noise in the data (a psychic, an
+unrelated post) stays at the bottom.
 
 ## Working a real case
 
@@ -85,7 +88,14 @@ ark-angel ingest C1 tips.txt
 ark-angel ingest C1 investigator_notes.txt
 ark-angel ingest-image C1 photo.jpg
 
-# Find and rank the patterns (safe to re-run after adding evidence)
+# Map place names in the evidence to coordinates
+ark-angel place suggest C1                         # names the evidence uses that aren't resolved yet
+ark-angel place add C1 "Union Station" 39.7527 -104.9997 --alias "the station"
+ark-angel place add C1 Boulder 40.015 -105.2705 --radius-m 6000   # towns/cities: use a big radius
+ark-angel place import C1 places.csv              # name,latitude,longitude[,aliases][,radius_m]
+ark-angel place lookup C1 "Union Station, Denver" --online           # OpenStreetMap; add --pick N to save
+
+# Find and rank the patterns (safe to re-run after adding evidence or places)
 ark-angel enrich C1
 
 # Handles found in the evidence -> public platform lookups (network, opt-in)
@@ -100,11 +110,19 @@ ark-angel report C1 --format html --out C1.html   # also: md, json
 Case data is stored as JSON files under `.ark_angel/cases` by default
 (override with `--data-dir`).
 
+## Place lookups and privacy
+
+Matching place names is offline. `place lookup --online` is the only command that
+touches the network, and it sends nothing but the query text you typed to
+OpenStreetMap's Nominatim. Results go into the gazetteer only when you `--pick`
+one. Nominatim asks for no more than about one request per second.
+
 ## How leads are scored
 
 Each correlated entity scores `kind weight × evidence items + 2 × (distinct sources − 1)`.
-Kind weights are phone/email/plate 3, handle 2.5, URL 1.5, and location clusters
-2.5 per item. The weights live in `src/ark_angel/analysis/correlate.py`. Change
+Kind weights are phone/email/plate 3, handle 2.5, town/city-sized places 2, URL
+1.5, and location clusters 2.5 per item. Landmark-sized places (radius up to the
+1 km cluster radius) are scored through their cluster, so they aren't counted twice. The weights live in `src/ark_angel/analysis/correlate.py`. Change
 them, re-run `enrich`, and see what moves.
 
 Scores order your attention. They are not conclusions. Verify everything before

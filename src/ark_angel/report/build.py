@@ -17,7 +17,7 @@ def lead_score(lead: Lead) -> float:
 
 def build_report(case: Case) -> dict[str, Any]:
     """Return ranked leads plus the entity index, geo clusters and timeline."""
-    analysis = analyze_case(case.evidence)
+    analysis = analyze_case(case.evidence, places=case.places)
     leads = sorted(case.leads, key=lead_score, reverse=True)
     return {
         "case": {
@@ -57,10 +57,17 @@ def build_report(case: Case) -> dict[str, Any]:
                 "latitude": round(cluster.latitude, 6),
                 "longitude": round(cluster.longitude, 6),
                 "radius_m": round(cluster.radius_km * 1000),
+                "places": cluster.place_names,
                 "points": [{"evidence_id": p.evidence_id, "source": p.source, "latitude": p.latitude,
-                            "longitude": p.longitude, "label": p.label} for p in cluster.points],
+                            "longitude": p.longitude, "label": p.label, "place": p.place}
+                           for p in cluster.points],
             }
             for cluster in analysis.clusters
+        ],
+        "places": [
+            {"name": p.name, "latitude": p.latitude, "longitude": p.longitude, "aliases": list(p.aliases),
+             "radius_m": p.radius_m, "source": p.source}
+            for p in case.places
         ],
         "timeline": [
             {"when": event.when.isoformat(sep=" ", timespec="minutes"), "evidence_id": event.evidence_id,

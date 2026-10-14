@@ -1,6 +1,7 @@
 """Ingest/enrich steps shared by the CLI commands and the demo."""
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -10,7 +11,7 @@ from ark_angel.cases.store import FileCaseStore
 from ark_angel.ingest.file_source import FileIngestionSource
 from ark_angel.ingest.image_source import ImageIngestionSource
 from ark_angel.ingest.username_source import UsernameHit, hit_records
-from ark_angel.models import Evidence, Lead
+from ark_angel.models import Evidence, Lead, Place
 
 
 def ingest_text(store: FileCaseStore, case_id: str, path: str | Path) -> list[Evidence]:
@@ -48,7 +49,7 @@ def enrich(store: FileCaseStore, case_id: str) -> tuple[list[Lead], CaseAnalysis
     recomputed from scratch so running this twice never duplicates anything.
     """
     case = store.get_case(case_id)
-    analysis = analyze_case(case.evidence)
+    analysis = analyze_case(case.evidence, places=case.places)
     new_leads = analysis.leads + list(RuleBasedAnalyzer().analyze_evidence(case, case.evidence))
     case.leads = [lead for lead in case.leads if lead.source != "analysis"] + new_leads
     store.save_case(case)
@@ -61,3 +62,54 @@ def handles_in_case(store: FileCaseStore, case_id: str) -> list[str]:
     handles = [(len(mentions), value) for (kind, value), mentions in analysis.entity_index.items()
                if kind == "handle"]
     return [value for _, value in sorted(handles, key=lambda item: (-item[0], item[1]))]
+
+
+def _validate_place(place: Place) -> Place:
+    if not place.name.strip():
+        raise ValueError("place name must not be empty")
+    if not (-90 <= place.latitude <= 90 and -180 <= place.longitude <= 180):
+        raise ValueError(f"coordinates out of range for {place.name!r}: {place.latitude}, {place.longitude}")
+    if place.radius_m <= 0:
+        raise ValueError(f"radius must be positive for {place.name!r}")
+    return place
+
+
+def add_places(store: FileCaseStore, case_id: str, places: Iterable[Place]) -> list[Place]:
+    """Add places to a case gazetteer, replacing any existing entry with the same name."""
+    case = store.get_case(case_id)
+    incoming = [_validate_place(place) for place in places]
+    names = {place.name.lower() for place in incoming}
+    case.places = [p for p in case.places if p.name.lower() not in names] + incoming
+    store.save_case(case)
+    return incoming
+
+
+def remove_place(store: FileCaseStore, case_id: str, name: str) -> bool:
+    case = store.get_case(case_id)
+    kept = [p for p in case.places if p.name.lower() != name.lower()]
+    removed = len(kept) != len(case.places)
+    case.places = kept
+    store.save_case(case)
+    return removed
+
+
+def read_places_csv(path: str | Path) -> list[Place]:
+    """Read a gazetteer CSV with columns ``name,latitude,longitude[,aliases][,radius_m]``.
+
+    Aliases are separated by ``;``.
+    """
+    places = []
+    with open(path, newline="") as handle:
+        for line, row in enumerate(csv.DictReader(handle), start=2):
+            try:
+                places.append(Place(
+                    name=row["name"].strip(),
+                    latitude=float(row["latitude"]),
+                    longitude=float(row["longitude"]),
+                    aliases=[a.strip() for a in (row.get("aliases") or "").split(";") if a.strip()],
+                    radius_m=float(row.get("radius_m") or 250),
+                    source="import",
+                ))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(f"{path}:{line}: bad gazetteer row ({exc})") from exc
+    return places

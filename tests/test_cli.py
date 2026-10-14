@@ -100,3 +100,38 @@ def test_pivot_without_online_only_lists_handles(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "@rt_owl" in result.output
     assert "--online" in result.output
+
+
+def test_place_commands_round_trip_and_feed_enrich(tmp_path: Path) -> None:
+    tips = tmp_path / "tips.txt"
+    tips.write_text("Caller saw her near Union Station\nNeighbor says the station again\n")
+    gazetteer = tmp_path / "places.csv"
+    gazetteer.write_text("name,latitude,longitude,aliases,radius_m\nBoulder,40.015,-105.2705,,6000\n")
+    _run(tmp_path, "case", "create", "C1", "t")
+    _run(tmp_path, "ingest", "C1", str(tips))
+
+    assert "Union Station" in _run(tmp_path, "place", "suggest", "C1").output
+
+    result = _run(tmp_path, "place", "add", "C1", "Union Station", "39.7527", "-104.9997", "--alias", "the station")
+    assert result.exit_code == 0, result.output
+    assert _run(tmp_path, "place", "import", "C1", str(gazetteer)).exit_code == 0
+    listing = _run(tmp_path, "place", "list", "C1").output
+    assert "Union Station" in listing and "aka the station" in listing and "Boulder" in listing
+
+    _run(tmp_path, "enrich", "C1")
+    assert "Location cluster around Union Station: 2 items" in _run(tmp_path, "report", "C1").output
+
+    assert _run(tmp_path, "place", "remove", "C1", "boulder").exit_code == 0
+    assert "Boulder" not in _run(tmp_path, "place", "list", "C1").output
+
+
+def test_place_errors_are_clean(tmp_path: Path) -> None:
+    _run(tmp_path, "case", "create", "C1", "t")
+    assert "out of range" in _run(tmp_path, "place", "add", "C1", "X", "99", "0").output
+    assert "no place named" in _run(tmp_path, "place", "remove", "C1", "nope").output
+    offline = _run(tmp_path, "place", "lookup", "C1", "Union Station")
+    assert offline.exit_code == 1 and "--online" in offline.output
+
+    bad = tmp_path / "bad.csv"
+    bad.write_text("name,latitude,longitude\nX,not-a-number,0\n")
+    assert "bad gazetteer row" in _run(tmp_path, "place", "import", "C1", str(bad)).output

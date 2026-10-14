@@ -5,6 +5,8 @@ import json
 from importlib import resources
 from pathlib import Path
 
+from ark_angel.analysis.places import suggest_places
+
 from ark_angel import pipeline
 from ark_angel.cases.store import FileCaseStore
 from ark_angel.geo.exif import decimal_to_dms
@@ -70,6 +72,13 @@ def build_demo_case(store: FileCaseStore, workdir: Path, case_id: str = DEMO_CAS
     hits = [UsernameHit(**hit) for hit in json.loads(_data_text("username_hits.json"))["hits"]]
     pipeline.ingest_username_hits(store, case_id, hits, simulated=True)
     log(f"  added {len(hits)} simulated username hits")
+
+    unresolved = suggest_places(store.get_case(case_id).evidence)
+    log(f"  evidence names {len(unresolved)} unresolved place(s): {', '.join(s.name for s in unresolved)}")
+    gazetteer = workdir / "places.csv"
+    gazetteer.write_text(_data_text("places.csv"))
+    places = pipeline.add_places(store, case_id, pipeline.read_places_csv(gazetteer))
+    log(f"  resolved them from the demo gazetteer ({len(places)} places)")
 
     leads, analysis = pipeline.enrich(store, case_id)
     correlated = sum(1 for lead in leads if not lead.identifier.startswith("tag-"))
