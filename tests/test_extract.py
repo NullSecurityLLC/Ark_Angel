@@ -44,3 +44,8 @@ def test_parse_datetime_handles_iso_and_exif() -> None:
     assert parse_datetime("seen 2026-09-29 14:40 near") == datetime(2026, 9, 29, 14, 40)
     assert parse_datetime("2026:10:01 03:10:00") == datetime(2026, 10, 1, 3, 10)
     assert parse_datetime("no date here") is None
+
+
+def test_license_plate_phrasings() -> None:
+    for text in ("license plate 7ABC123 seen", "licence plate: 7ABC123", "plate # 7ABC123", "tags 7ABC123"):
+        assert ("plate", "7ABC123") in _pairs(text), text

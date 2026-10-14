@@ -87,7 +87,10 @@ def case_show(store: FileCaseStore, case_id: str) -> None:
 @click.argument("source_file", type=click.Path(exists=True, dir_okay=False))
 @click.pass_obj
 def ingest(store: FileCaseStore, case_id: str, source_file: str) -> None:
-    """Ingest a text file (one item per line) or a .csv/.tsv tip-line export (one item per row)."""
+    """Ingest a file: text (one item per line), .csv/.tsv tip-line export, or .eml/.mbox email."""
+    if source_file.lower().endswith((".eml", ".mbox")):
+        _report_email(pipeline.ingest_email(store, case_id, source_file), case_id)
+        return
     if source_file.lower().endswith((".csv", ".tsv")):
         from ark_angel.ingest.csv_source import CsvTipSource
 
@@ -96,6 +99,23 @@ def ingest(store: FileCaseStore, case_id: str, source_file: str) -> None:
         return
     evidence = pipeline.ingest_text(store, case_id, source_file)
     click.echo(f"Ingested {len(evidence)} evidence item(s) into case {case_id!r}")
+    try:
+        from ark_angel.ingest.chat_source import detect_format
+
+        if detect_format(Path(source_file)) == "whatsapp":
+            click.echo("This looks like a WhatsApp export. `ark-angel ingest-chat` reads it per message, "
+                       "with senders and times.")
+    except (ValueError, OSError):
+        pass
+
+
+def _report_email(result, case_id: str) -> None:
+    attached = len(result.evidence) - result.messages
+    click.echo(f"Imported {result.messages} email(s) into case {case_id!r}"
+               + (f", plus {attached} photo attachment(s) with EXIF ({result.attachments_with_gps} with GPS)"
+                  if attached else ""))
+    if result.skipped_attachments:
+        click.echo(f"  {result.skipped_attachments} image attachment(s) had no EXIF data")
 
 
 def _report_csv(result, case_id: str, dry_run: bool) -> None:
@@ -183,6 +203,43 @@ def ingest_csv(store: FileCaseStore, case_id: str, csv_file: str, text_cols: tup
         for item in result.evidence[:3]:
             click.echo(f"  {item.identifier}: {item.content}")
         click.echo("Nothing written. Re-run without --dry-run to import.")
+
+
+@cli.command("ingest-email")
+@click.argument("case_id")
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--source", help="Source name for these messages (default: the file or folder name).")
+@click.pass_obj
+def ingest_email(store: FileCaseStore, case_id: str, path: str, source: str) -> None:
+    """Import email: an .eml file, an .mbox mailbox, or a folder of .eml files.
+
+    One evidence item per message (sender, subject, body without quoted replies),
+    plus one per image attachment that carries EXIF (GPS, time, device).
+    Recipients are kept out of the scanned text so the tip line's own address
+    doesn't become a lead.
+    """
+    _report_email(pipeline.ingest_email(store, case_id, path, source), case_id)
+
+
+@cli.command("ingest-chat")
+@click.argument("case_id")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+@click.option("--format", "fmt", type=click.Choice(["auto", "whatsapp", "telegram"]), default="auto",
+              show_default=True, help="Export format.")
+@click.option("--dayfirst", is_flag=True, help="Dates are day/month (most non-US phones).")
+@click.option("--source", help="Source name for these messages (default: the file name).")
+@click.pass_obj
+def ingest_chat(store: FileCaseStore, case_id: str, path: str, fmt: str, dayfirst: bool, source: str) -> None:
+    """Import a WhatsApp (.txt) or Telegram (result.json) chat export, one item per message.
+
+    Other chat tools usually export CSV; use `ingest-csv` for those.
+    """
+    result = pipeline.ingest_chat(store, case_id, path, fmt, dayfirst, source)
+    click.echo(f"Imported {len(result.evidence)} {result.format} message(s) into case {case_id!r}")
+    if result.skipped:
+        click.echo(f"  {result.skipped} system or media-only message(s) skipped")
+    if result.unparsed_times:
+        click.echo(f"  {result.unparsed_times} time(s) not understood (kept in the text; try --dayfirst?)")
 
 
 @cli.command("ingest-image")

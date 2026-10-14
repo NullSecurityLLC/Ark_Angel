@@ -5,6 +5,11 @@ person, phone numbers use the reserved 555-01xx range, email addresses use
 reserved example domains, and the usernames are made up. Do not treat any of it
 as real.
 
+`volunteer_chat.txt` is a WhatsApp group export, and `sam_email.txt` is the
+body of an email that the demo sends with a generated, geotagged photo
+attached. The quoted reply in that email holds a phone number that must *not*
+be counted.
+
 `tips.csv` is shaped like a tip-line export: US-style dates, a callback number
 and caller location per tip, and a dropped pin in the Lat/Lon columns.
 
