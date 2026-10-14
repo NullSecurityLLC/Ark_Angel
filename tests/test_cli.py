@@ -156,7 +156,7 @@ def test_lead_review_commands_survive_enrich(tmp_path: Path) -> None:
     assert "corr-plate" not in _run(tmp_path, "lead", "list", "C1").output
     assert "corr-plate" in _run(tmp_path, "lead", "list", "C1", "--status", "dismissed").output
     report = _run(tmp_path, "report", "C1").output
-    assert "verified by me" in report and "Dismissed: 1 hidden" in report
+    assert "verified by me" in report and "DISMISSED  1 hidden (--all to show)" in report
 
     shown = _run(tmp_path, "lead", "show", "C1", "corr-plate").output
     assert "dismissed by me: wrong car" in shown
@@ -259,3 +259,13 @@ def test_email_and_chat_commands(tmp_path: Path) -> None:
     _run(tmp_path, "enrich", "C1")
     report = _run(tmp_path, "report", "C1").output
     assert "Phone 3035550147 appears in 3 items across 3 sources" in report  # email, plain text, chat
+
+
+def test_colour_controls(tmp_path: Path) -> None:
+    _run(tmp_path, "case", "create", "C1", "t")
+    forced = runner.invoke(cli, ["--data-dir", str(tmp_path / "cases"), "report", "C1"], env={"FORCE_COLOR": "1"})
+    assert "\x1b[" in forced.output
+    for args, env in ((["--no-color"], {"FORCE_COLOR": "1"}), ([], {"NO_COLOR": "1", "FORCE_COLOR": "1"})):
+        result = runner.invoke(cli, ["--data-dir", str(tmp_path / "cases"), *args, "report", "C1"], env=env)
+        assert "\x1b[" not in result.output, args
+    assert "\x1b[" not in _run(tmp_path, "report", "C1").output  # not a terminal: plain by default
