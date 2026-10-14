@@ -5,12 +5,16 @@ person, phone numbers use the reserved 555-01xx range, email addresses use
 reserved example domains, and the usernames are made up. Do not treat any of it
 as real.
 
+`tips.csv` is shaped like a tip-line export: US-style dates, a callback number
+and caller location per tip, and a dropped pin in the Lat/Lon columns.
+
 The files deliberately plant overlaps for ArkAngel to find:
 
 - one phone number written three different ways across three sources
 - a handle that shows up in tips, investigator notes, social posts and a
   (simulated) username lookup
-- a vehicle plate mentioned by two tipsters and in the notes
+- a vehicle plate mentioned twice on the tip line and once in the notes, by a
+  repeat caller whose callback number matches across both tips
 - a dropped pin and two geotagged photos within a few hundred metres, plus
   tips and notes that only *name* the spot ("Union Station", "the station",
   "Cherry Creek trail"); `places.csv` maps those names to coordinates so they

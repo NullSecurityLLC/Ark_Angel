@@ -19,6 +19,7 @@ def test_demo_runs_offline_and_surfaces_planted_patterns(tmp_path: Path) -> None
     assert "Place Boulder appears in 3 items" in top[3]
     assert "Email sam.k.demo@example.org" in top[4]
     assert "unresolved place(s): Boulder, Cherry Creek, Union Station" in result.output
+    assert "imported 10 tips from the tip-line export tips.csv" in result.output
     verified = lines[lines.index("Verified") + 1]
     assert "Phone 3035550147" in verified
     assert "RESURFACED: dismissed by Det. Demo (simulated)" in result.output

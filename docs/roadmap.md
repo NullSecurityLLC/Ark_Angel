@@ -25,7 +25,8 @@ end-to-end workflow.
 
 ## Phase 2: More signal, less noise
 
-- More ingestion adapters: CSV/tip-line exports, email (.eml), chat exports.
+- [x] CSV/TSV tip-line exports (`ingest-csv`).
+- More ingestion adapters: email (.eml), chat exports.
 - Bundled offline gazetteer (e.g. GeoNames cities) so towns resolve without manual entry.
 - Time-window correlation: entities that co-occur within N hours.
 - Co-occurrence links: two entities that keep appearing in the same items.

@@ -87,9 +87,28 @@ def case_show(store: FileCaseStore, case_id: str) -> None:
 @click.argument("source_file", type=click.Path(exists=True, dir_okay=False))
 @click.pass_obj
 def ingest(store: FileCaseStore, case_id: str, source_file: str) -> None:
-    """Ingest a local text file as evidence for a case (one item per line)."""
+    """Ingest a text file (one item per line) or a .csv/.tsv tip-line export (one item per row)."""
+    if source_file.lower().endswith((".csv", ".tsv")):
+        from ark_angel.ingest.csv_source import CsvTipSource
+
+        _report_csv(pipeline.ingest_csv(store, case_id, source_file, CsvTipSource()), case_id, dry_run=False)
+        click.echo("Columns were guessed from the header; use `ark-angel ingest-csv --dry-run` to check or override.")
+        return
     evidence = pipeline.ingest_text(store, case_id, source_file)
     click.echo(f"Ingested {len(evidence)} evidence item(s) into case {case_id!r}")
+
+
+def _report_csv(result, case_id: str, dry_run: bool) -> None:
+    verb = "Would import" if dry_run else "Imported"
+    click.echo(f"{verb} {len(result.evidence)} tip(s) into case {case_id!r}: "
+               f"{result.with_time} with a time, {result.with_coords} with coordinates")
+    click.echo(f"  columns: {result.mapping.describe()}")
+    problems = [(result.skipped_blank, "blank row(s) skipped"),
+                (result.unparsed_times, "time(s) not understood (kept in the text; try --dayfirst?)"),
+                (result.bad_coordinates, "row(s) with unusable coordinates")]
+    for count, label in problems:
+        if count:
+            click.echo(f"  {count} {label}")
 
 
 @cli.command("enrich")
@@ -133,6 +152,37 @@ def report(store: FileCaseStore, case_id: str, fmt: str, out_path: str, top: int
         click.echo(f"Wrote {fmt} report to {out_path}")
     else:
         click.echo(output)
+
+
+@cli.command("ingest-csv")
+@click.argument("case_id")
+@click.argument("csv_file", type=click.Path(exists=True, dir_okay=False))
+@click.option("--text", "text_cols", multiple=True, help="Column(s) holding the tip text (repeatable; joined).")
+@click.option("--id", "id_col", help="Column holding the tip id.")
+@click.option("--when", "when_col", help="Column holding the date/time received.")
+@click.option("--lat", "lat_col", help="Latitude column.")
+@click.option("--lon", "lon_col", help="Longitude column.")
+@click.option("--dayfirst", is_flag=True, help="Read 01/10/2026 as 1 October, not January 10.")
+@click.option("--source", help="Source name for these tips (default: the file name).")
+@click.option("--dry-run", is_flag=True, help="Show the column mapping and first rows without importing.")
+@click.pass_obj
+def ingest_csv(store: FileCaseStore, case_id: str, csv_file: str, text_cols: tuple, id_col: str, when_col: str,
+               lat_col: str, lon_col: str, dayfirst: bool, source: str, dry_run: bool) -> None:
+    """Import a tip-line export (CSV/TSV), one evidence item per row.
+
+    Columns are guessed from header names. Columns that aren't text, id, time or
+    coordinates are kept as "Header: value" so they're still scanned for leads.
+    """
+    from ark_angel.ingest.csv_source import CsvTipSource
+
+    tip_source = CsvTipSource(text=text_cols, id=id_col, when=when_col, lat=lat_col, lon=lon_col,
+                              dayfirst=dayfirst, source=source)
+    result = pipeline.ingest_csv(store, case_id, csv_file, tip_source, dry_run=dry_run)
+    _report_csv(result, case_id, dry_run)
+    if dry_run:
+        for item in result.evidence[:3]:
+            click.echo(f"  {item.identifier}: {item.content}")
+        click.echo("Nothing written. Re-run without --dry-run to import.")
 
 
 @cli.command("ingest-image")
