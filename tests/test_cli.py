@@ -207,3 +207,32 @@ def test_csv_import_errors_are_clean(tmp_path: Path) -> None:
     result = _run(tmp_path, "ingest-csv", "C1", str(export))
     assert result.exit_code == 1 and "--text" in result.output
     assert _run(tmp_path, "ingest-csv", "C1", str(export), "--text", "foo", "--dry-run").exit_code == 0
+
+
+def test_builtin_gazetteer_commands(tmp_path: Path) -> None:
+    tips = tmp_path / "tips.txt"
+    tips.write_text("seen near Union Station\nshe moved to Boulder County\ncousin in Springfield, IL\n"
+                    "met him in Riley once\n")
+    _run(tmp_path, "case", "create", "C1", "t")
+    _run(tmp_path, "ingest", "C1", str(tips))
+
+    found = _run(tmp_path, "place", "find", "Springfield", "--state", "ohio").output
+    assert "Springfield, OH (city" in found
+
+    preview = _run(tmp_path, "place", "resolve", "C1", "--state", "CO").output
+    assert "Boulder County -> Boulder County, CO" in preview
+    assert "Springfield -> Springfield, IL" in preview  # the ", IL" in the text beats the CO region
+    assert "Riley: ambiguous" in preview and "Union Station: unknown" in preview
+    assert "Nothing saved" in preview
+    assert "No places yet" in _run(tmp_path, "place", "list", "C1").output
+
+    assert "Added 2 place(s)" in _run(tmp_path, "place", "resolve", "C1", "--state", "CO", "--apply").output
+    listing = _run(tmp_path, "place", "list", "C1").output
+    assert "builtin:county:Boulder County, CO" in listing and "builtin:city:Springfield, IL" in listing
+
+    added = _run(tmp_path, "place", "add", "C1", "Aurora", "--state", "CO")
+    assert added.exit_code == 0 and "builtin:city:Aurora, CO" in added.output
+    ambiguous = _run(tmp_path, "place", "add", "C1", "Springfield")
+    assert ambiguous.exit_code == 1 and "Narrow it with --state" in ambiguous.output
+    half = _run(tmp_path, "place", "add", "C1", "X", "39.7")
+    assert half.exit_code == 1 and "both LATITUDE and LONGITUDE" in half.output

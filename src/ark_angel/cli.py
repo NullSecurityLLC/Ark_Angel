@@ -254,16 +254,30 @@ def _describe(place: Place) -> str:
 @place_group.command("add", context_settings={"ignore_unknown_options": True})
 @click.argument("case_id")
 @click.argument("name")
-@click.argument("latitude", type=float)
-@click.argument("longitude", type=float)
+@click.argument("latitude", type=float, required=False)
+@click.argument("longitude", type=float, required=False)
 @click.option("--alias", "aliases", multiple=True, help="Another way the place is written (repeatable).")
-@click.option("--radius-m", default=250.0, show_default=True,
-              help="Precision in metres. Use kilometres-scale values for towns and cities.")
+@click.option("--radius-m", type=float, help="Precision in metres (default 250 for hand-entered places).")
+@click.option("--state", "states", multiple=True, help="Without coordinates: narrow the built-in lookup to a state.")
 @click.pass_obj
 def place_add(store: FileCaseStore, case_id: str, name: str, latitude: float, longitude: float,
-              aliases: tuple, radius_m: float) -> None:
-    """Add (or replace) a named place."""
-    place, = pipeline.add_places(store, case_id, [Place(name, latitude, longitude, list(aliases), radius_m)])
+              aliases: tuple, radius_m: float, states: tuple) -> None:
+    """Add (or replace) a named place.
+
+    Give LATITUDE LONGITUDE for a landmark. Leave them out for a US city, county
+    or state and it comes from the built-in gazetteer, e.g.
+    `ark-angel place add C1 Boulder --state CO`.
+    """
+    if (latitude is None) != (longitude is None):
+        raise click.ClickException("give both LATITUDE and LONGITUDE, or neither to use the built-in gazetteer")
+    if latitude is None:
+        place = pipeline.place_from_builtin(name, states)
+        place.aliases += [a for a in aliases if a not in place.aliases]
+        if radius_m:
+            place.radius_m = radius_m
+    else:
+        place = Place(name, latitude, longitude, list(aliases), radius_m or 250.0)
+    place, = pipeline.add_places(store, case_id, [place])
     click.echo(f"Added {_describe(place)}")
     click.echo(f"Run `ark-angel enrich {case_id}` to re-correlate.")
 
@@ -318,6 +332,54 @@ def place_suggest(store: FileCaseStore, case_id: str) -> None:
         click.echo(f"  {suggestion.name}  ({len(suggestion.evidence_ids)}x: {', '.join(suggestion.evidence_ids[:4])})")
     click.echo(f"Resolve with `ark-angel place add {case_id} NAME LAT LON` or "
                f"`ark-angel place lookup {case_id} NAME --online`.")
+
+
+@place_group.command("find")
+@click.argument("name")
+@click.option("--state", "states", multiple=True, help="Only this state (repeatable; code or name).")
+def place_find(name: str, states: tuple) -> None:
+    """Search the built-in US gazetteer (states, counties, cities). Offline."""
+    from ark_angel.geo.builtin import find, normalize_states
+
+    entries = find(name, normalize_states(states))
+    if not entries:
+        raise click.ClickException(f"no state, county or city called {name!r}"
+                                   + (f" in {', '.join(states)}" if states else ""))
+    for entry in entries[:20]:
+        click.echo(f"  {entry.label}  {entry.latitude:.4f}, {entry.longitude:.4f}")
+    if len(entries) > 20:
+        click.echo(f"  … and {len(entries) - 20} more; narrow it with --state")
+
+
+@place_group.command("resolve")
+@click.argument("case_id")
+@click.option("--state", "states", multiple=True,
+              help="The case's region: prefer places in this state (repeatable; code or name).")
+@click.option("--apply", "apply_", is_flag=True, help="Add the resolved places to the case gazetteer.")
+@click.pass_obj
+def place_resolve(store: FileCaseStore, case_id: str, states: tuple, apply_: bool) -> None:
+    """Resolve unmatched place names in the evidence against the built-in US gazetteer.
+
+    Shows what each name would resolve to; nothing is saved without --apply.
+    Hints in the evidence ("Boulder, CO") beat --state.
+    """
+    resolutions = pipeline.resolve_unmatched_places(store, case_id, states)
+    if not resolutions:
+        click.echo("No unmatched place names in the evidence.")
+        return
+    for r in resolutions:
+        if r.status == "resolved":
+            click.echo(f"  {r.name} -> {r.entry.label}  [{r.why}]")
+        else:
+            click.echo(f"  {r.name}: {r.status}, {r.why}")
+            for entry in r.candidates[:3]:
+                click.echo(click.style(f"      {entry.label}", dim=True))
+    resolved = [r for r in resolutions if r.status == "resolved"]
+    if not apply_:
+        click.echo(f"{len(resolved)} of {len(resolutions)} resolved. Nothing saved; re-run with --apply to add them.")
+        return
+    pipeline.add_places(store, case_id, [r.entry.to_place(r.name) for r in resolved])
+    click.echo(f"Added {len(resolved)} place(s). Run `ark-angel enrich {case_id}` to re-correlate.")
 
 
 @place_group.command("lookup")
