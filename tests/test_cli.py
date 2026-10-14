@@ -13,7 +13,7 @@ def _run(tmp_path: Path, *args: str):
 
 
 def test_version_importable() -> None:
-    assert __version__ == "0.1.0"
+    assert __version__ == "0.2.0"
 
 
 def test_cli_help() -> None:
@@ -87,7 +87,7 @@ def test_report_formats_and_out_file(tmp_path: Path) -> None:
         out = tmp_path / f"r.{fmt}"
         result = _run(tmp_path, "report", "C1", "--format", fmt, "--out", str(out))
         assert result.exit_code == 0, result.output
-        assert out.read_text()
+        assert out.read_text(encoding="utf-8")
 
 
 def test_pivot_without_online_only_lists_handles(tmp_path: Path) -> None:

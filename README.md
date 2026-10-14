@@ -22,6 +22,7 @@ There is no AI model in the loop. Every lead comes from pattern matching you can
 
 ## What it does
 
+- **Email and chat import**: `.eml`, `.mbox` or a folder of `.eml`, one item per message. Image attachments with EXIF become their own items with GPS, time and device. Recipients and quoted replies are left out so the tip line's own address and re-quoted numbers don't skew the leads. WhatsApp and Telegram exports come in one item per message, with sender and time.
 - **Tip-line import**: CSV/TSV exports become one evidence item per row. Column roles are guessed from the headers (tip text, id, time received, lat/lon) and can be overridden. Every other column, like a callback number or caller location, is still scanned for leads. It copes with Excel BOMs, `;`/tab delimiters and US or day-first dates.
 - **Entity extraction**: phones, emails, handles, plates, URLs, coordinates and dates pulled from free text and normalized, so `(303) 555-0147`, `303.555.0147` and `+1 303 555 0147` are the same number.
 - **Cross-source correlation**: anything that shows up in more than one evidence item becomes a lead, and agreement across *different* sources (a tip and phone records and a social post) ranks higher than repetition within one.
@@ -54,10 +55,45 @@ Every action you take is your responsibility. We recommend operating under local
 ---
 
 
+## Download
+
+**Standalone app, no Python needed.** Grab the file for your system from the
+[Releases page](https://github.com/NullSecurityLLC/Ark_Angel/releases):
+
+| System | File |
+|---|---|
+| Windows (64-bit) | `ark-angel-windows-x86_64.exe` |
+| macOS (Apple Silicon) | `ark-angel-macos-arm64` |
+| Linux (x86-64) | `ark-angel-linux-x86_64` |
+
+It's a command-line tool: open a terminal (PowerShell on Windows) in the folder
+you saved it to and run it with `demo` to see it work:
+
+```bash
+./ark-angel-linux-x86_64 demo          # Linux (run `chmod +x ark-angel-linux-x86_64` first)
+./ark-angel-macos-arm64 demo           # macOS, see the note below
+.\ark-angel-windows-x86_64.exe demo    # Windows
+```
+
+The executables aren't code-signed yet, so the OS will warn you the first time:
+
+- **Windows**: SmartScreen says "Windows protected your PC". Click *More info*, then *Run anyway*.
+- **macOS**: run `xattr -d com.apple.quarantine ark-angel-macos-arm64` once, or right-click, *Open*, then *Open* again.
+
+Check your download against `SHA256SUMS.txt` on the release page
+(`sha256sum -c SHA256SUMS.txt --ignore-missing`, or `Get-FileHash` on Windows).
+
+**With Python 3.9+**, install it as a command with [pipx](https://pipx.pypa.io/):
+
+```bash
+pipx install git+https://github.com/NullSecurityLLC/Ark_Angel.git   # latest
+pipx install ./ark_angel-0.2.0-py3-none-any.whl                      # or the wheel from a release
+```
+
 ## Quickstart
 
 ```bash
-pip install -e .
+pip install -e .        # from a clone, for development
 ark-angel demo
 ```
 
@@ -93,6 +129,8 @@ named. The noise in the data (a psychic, an unrelated post) stays at the bottom.
 ark-angel case create C1 "Missing Person Case"
 
 # Evidence in: text files are one item per line; photos contribute EXIF GPS/time/device
+ark-angel ingest-email C1 tipline_inbox.mbox          # .eml, .mbox, or a folder of .eml; photo attachments' GPS too
+ark-angel ingest-chat C1 "WhatsApp Chat with Volunteers.txt"   # WhatsApp .txt or Telegram result.json
 ark-angel ingest-csv C1 hotline_export.csv --dry-run   # check the guessed columns first
 ark-angel ingest-csv C1 hotline_export.csv             # or: --text Narrative --when "Date Received" --dayfirst
 ark-angel ingest C1 investigator_notes.txt

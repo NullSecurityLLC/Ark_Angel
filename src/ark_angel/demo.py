@@ -23,7 +23,7 @@ TEXT_SOURCES = ("investigator_notes.txt", "social_posts.txt")
 
 
 def _data_text(name: str) -> str:
-    return (resources.files("ark_angel") / "demo_data" / name).read_text()
+    return (resources.files("ark_angel") / "demo_data" / name).read_text(encoding="utf-8")
 
 
 def make_photo(path: Path, latitude: float, longitude: float, timestamp: str, make: str, model: str) -> Path:
@@ -75,18 +75,18 @@ def build_demo_case(store: FileCaseStore, workdir: Path, case_id: str = DEMO_CAS
     text_dir = workdir / "text"
     text_dir.mkdir(parents=True, exist_ok=True)
     export = text_dir / "tips.csv"
-    export.write_text(_data_text("tips.csv"))
+    export.write_text(_data_text("tips.csv"), encoding="utf-8")
     tips = pipeline.ingest_csv(store, case_id, export, CsvTipSource())
     log(f"  imported {len(tips.evidence):>2} tips from the tip-line export tips.csv ({tips.mapping.describe()})")
     chat = text_dir / "volunteer_chat.txt"
-    chat.write_text(_data_text("volunteer_chat.txt"))
+    chat.write_text(_data_text("volunteer_chat.txt"), encoding="utf-8")
     messages = pipeline.ingest_chat(store, case_id, chat)
     log(f"  imported {len(messages.evidence):>2} messages from the volunteers' WhatsApp export "
         f"({messages.skipped} system/media lines skipped)")
 
     for name in TEXT_SOURCES:
         path = text_dir / name
-        path.write_text(_data_text(name))
+        path.write_text(_data_text(name), encoding="utf-8")
         count = len(pipeline.ingest_text(store, case_id, path))
         log(f"  ingested {count:>2} lines from {name}")
 
@@ -110,7 +110,7 @@ def build_demo_case(store: FileCaseStore, workdir: Path, case_id: str = DEMO_CAS
     unresolved = suggest_places(store.get_case(case_id).evidence)
     log(f"  evidence names {len(unresolved)} unresolved place(s): {', '.join(s.name for s in unresolved)}")
     gazetteer = workdir / "places.csv"
-    gazetteer.write_text(_data_text("places.csv"))
+    gazetteer.write_text(_data_text("places.csv"), encoding="utf-8")
     places = pipeline.add_places(store, case_id, pipeline.read_places_csv(gazetteer))
     log(f"  added {len(places)} landmarks from the case gazetteer: {', '.join(p.name for p in places)}")
     resolved = [r for r in pipeline.resolve_unmatched_places(store, case_id, ["CO"]) if r.status == "resolved"]
@@ -132,7 +132,7 @@ def build_demo_case(store: FileCaseStore, workdir: Path, case_id: str = DEMO_CAS
         log(f"  {status} #{item.rank}: {item.lead.summary}")
 
     late = text_dir / "late_tips.txt"
-    late.write_text(_data_text("late_tips.txt"))
+    late.write_text(_data_text("late_tips.txt"), encoding="utf-8")
     pipeline.ingest_text(store, case_id, late)
     pipeline.enrich(store, case_id)
     log("A late tip arrives (Boulder bus driver) and enrich re-runs: the dismissed Boulder lead resurfaces")

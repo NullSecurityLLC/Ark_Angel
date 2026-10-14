@@ -27,7 +27,7 @@ def test_demo_runs_offline_and_surfaces_planted_patterns(tmp_path: Path) -> None
     assert "Phone 3035550147" in verified
     assert "RESURFACED: dismissed by Det. Demo (simulated)" in result.output
     assert "1 new item(s) since: late_tips.txt:1" in result.output
-    page = out.read_text()
+    page = out.read_text(encoding="utf-8")
     assert "Synthetic demo" in page and "rt_demo_owl" in page
 
 

@@ -1,10 +1,10 @@
 """Command-line interface for Ark Angel."""
-from importlib.metadata import version
+import sys
 from pathlib import Path
 
 import click
 
-from ark_angel import pipeline
+from ark_angel import __version__, pipeline
 from ark_angel.cases.store import CaseNotFoundError, FileCaseStore
 from ark_angel.models import Case, Place
 
@@ -24,7 +24,7 @@ class _Group(click.Group):
 
 
 @click.group(cls=_Group, help="Ark Angel: pattern recognition that surfaces leads from case evidence.")
-@click.version_option(message="%(version)s")
+@click.version_option(version=__version__, message="%(version)s")
 @click.option(
     "--data-dir",
     default=DEFAULT_DATA_DIR,
@@ -34,18 +34,19 @@ class _Group(click.Group):
 @click.pass_context
 def cli(ctx: click.Context, data_dir: str) -> None:
     """Base command group for Ark Angel."""
+    # Evidence can hold characters a Windows console can't show; print "?" rather than crash.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     ctx.obj = FileCaseStore(data_dir)
 
 
 @cli.command("version")
 def show_version() -> None:
     """Show the current Ark Angel version."""
-    try:
-        click.echo(version("ark-angel"))
-    except Exception:
-        from ark_angel import __version__
-
-        click.echo(__version__)
+    click.echo(__version__)
 
 
 @cli.group("case", help="Manage investigation cases.")
@@ -168,7 +169,7 @@ def report(store: FileCaseStore, case_id: str, fmt: str, out_path: str, top: int
     }
     output = renderers[fmt]()
     if out_path:
-        Path(out_path).write_text(output)
+        Path(out_path).write_text(output, encoding="utf-8")
         click.echo(f"Wrote {fmt} report to {out_path}")
     else:
         click.echo(output)
@@ -613,7 +614,7 @@ def demo(store: FileCaseStore, out_path: str, case_id: str) -> None:
     for position, lead in enumerate(open_leads[:5], start=1):
         show(lead, f"{position}.")
 
-    Path(out_path).write_text(render_html(data, notice=DEMO_NOTICE))
+    Path(out_path).write_text(render_html(data, notice=DEMO_NOTICE), encoding="utf-8")
     click.echo(f"\nWrote HTML case file to {out_path}")
     click.echo(f"Explore further: ark-angel lead list {case_id}   |   ark-angel report {case_id} --all")
 

@@ -104,7 +104,7 @@ def read_places_csv(path: str | Path) -> list[Place]:
     Aliases are separated by ``;``.
     """
     places = []
-    with open(path, newline="") as handle:
+    with open(path, newline="", encoding="utf-8-sig") as handle:
         for line, row in enumerate(csv.DictReader(handle), start=2):
             try:
                 places.append(Place(
