@@ -6,7 +6,7 @@ import click
 
 from ark_angel import pipeline
 from ark_angel.cases.store import CaseNotFoundError, FileCaseStore
-from ark_angel.models import Case
+from ark_angel.models import Case, Place
 
 DEFAULT_DATA_DIR = ".ark_angel/cases"
 
@@ -186,6 +186,124 @@ def pivot(store: FileCaseStore, case_id: str, online: bool) -> None:
         leads = pipeline.ingest_username_hits(store, case_id, source.check(handle))
         click.echo(f"@{handle}: {len(leads)} platform match(es)")
     click.echo(f"Run `ark-angel enrich {case_id}` to correlate the new hits.")
+
+
+@cli.group("place", help="Manage a case's gazetteer of named places.")
+def place_group() -> None:
+    """Gazetteer commands: map place names in evidence to coordinates."""
+
+
+def _describe(place: Place) -> str:
+    aliases = f"  aka {', '.join(place.aliases)}" if place.aliases else ""
+    return (f"{place.name}: {place.latitude:.5f}, {place.longitude:.5f} "
+            f"(±{place.radius_m:g} m, {place.source}){aliases}")
+
+
+# ignore_unknown_options lets negative coordinates like -104.9997 through as arguments.
+@place_group.command("add", context_settings={"ignore_unknown_options": True})
+@click.argument("case_id")
+@click.argument("name")
+@click.argument("latitude", type=float)
+@click.argument("longitude", type=float)
+@click.option("--alias", "aliases", multiple=True, help="Another way the place is written (repeatable).")
+@click.option("--radius-m", default=250.0, show_default=True,
+              help="Precision in metres. Use kilometres-scale values for towns and cities.")
+@click.pass_obj
+def place_add(store: FileCaseStore, case_id: str, name: str, latitude: float, longitude: float,
+              aliases: tuple, radius_m: float) -> None:
+    """Add (or replace) a named place."""
+    place, = pipeline.add_places(store, case_id, [Place(name, latitude, longitude, list(aliases), radius_m)])
+    click.echo(f"Added {_describe(place)}")
+    click.echo(f"Run `ark-angel enrich {case_id}` to re-correlate.")
+
+
+@place_group.command("list")
+@click.argument("case_id")
+@click.pass_obj
+def place_list(store: FileCaseStore, case_id: str) -> None:
+    """List a case's named places."""
+    places = store.get_case(case_id).places
+    if not places:
+        click.echo("No places yet. Try `ark-angel place suggest` to see which names the evidence uses.")
+    for place in places:
+        click.echo(_describe(place))
+
+
+@place_group.command("remove")
+@click.argument("case_id")
+@click.argument("name")
+@click.pass_obj
+def place_remove(store: FileCaseStore, case_id: str, name: str) -> None:
+    """Remove a named place."""
+    if not pipeline.remove_place(store, case_id, name):
+        raise click.ClickException(f"no place named {name!r} in case {case_id!r}")
+    click.echo(f"Removed {name!r}")
+
+
+@place_group.command("import")
+@click.argument("case_id")
+@click.argument("csv_file", type=click.Path(exists=True, dir_okay=False))
+@click.pass_obj
+def place_import(store: FileCaseStore, case_id: str, csv_file: str) -> None:
+    """Import places from a CSV: name,latitude,longitude[,aliases][,radius_m] (aliases split by ';')."""
+    places = pipeline.add_places(store, case_id, pipeline.read_places_csv(csv_file))
+    click.echo(f"Imported {len(places)} place(s) into case {case_id!r}")
+
+
+@place_group.command("suggest")
+@click.argument("case_id")
+@click.pass_obj
+def place_suggest(store: FileCaseStore, case_id: str) -> None:
+    """Show place-like names in the evidence that the gazetteer doesn't cover yet."""
+    from ark_angel.analysis.places import suggest_places
+
+    case = store.get_case(case_id)
+    suggestions = suggest_places(case.evidence, case.places)
+    if not suggestions:
+        click.echo("Every place-like name in the evidence is already in the gazetteer.")
+        return
+    click.echo("Unresolved place names (most mentioned first):")
+    for suggestion in suggestions:
+        click.echo(f"  {suggestion.name}  ({len(suggestion.evidence_ids)}x: {', '.join(suggestion.evidence_ids[:4])})")
+    click.echo(f"Resolve with `ark-angel place add {case_id} NAME LAT LON` or "
+               f"`ark-angel place lookup {case_id} NAME --online`.")
+
+
+@place_group.command("lookup")
+@click.argument("case_id")
+@click.argument("query")
+@click.option("--online", is_flag=True, help="Send QUERY (only the query text) to OpenStreetMap Nominatim.")
+@click.option("--pick", type=int, help="Save result number N to the gazetteer.")
+@click.option("--name", help="Name to match in evidence (defaults to QUERY).")
+@click.option("--alias", "aliases", multiple=True, help="Extra aliases to save with the picked result.")
+@click.pass_obj
+def place_lookup(store: FileCaseStore, case_id: str, query: str, online: bool, pick: int, name: str,
+                 aliases: tuple) -> None:
+    """Look up coordinates for a place name, then optionally save one result."""
+    from ark_angel.geo.nominatim import search
+
+    store.get_case(case_id)
+    if not online:
+        raise click.ClickException(
+            "lookup sends the query text to OpenStreetMap Nominatim; re-run with --online to allow it "
+            f"(or add the place by hand with `ark-angel place add {case_id} ...`)"
+        )
+    candidates = search(query)
+    if not candidates:
+        raise click.ClickException(f"no results for {query!r}")
+    if pick is None:
+        for number, (place, display) in enumerate(candidates, start=1):
+            click.echo(f"  {number}. {place.latitude:.5f}, {place.longitude:.5f} (±{place.radius_m:g} m)  {display}")
+        click.echo("Re-run with --pick N to save one.")
+        return
+    if not 1 <= pick <= len(candidates):
+        raise click.ClickException(f"--pick must be between 1 and {len(candidates)}")
+    place = candidates[pick - 1][0]
+    place.name = name or query
+    place.aliases = list(aliases)
+    pipeline.add_places(store, case_id, [place])
+    click.echo(f"Added {_describe(place)}")
+    click.echo(f"Run `ark-angel enrich {case_id}` to re-correlate.")
 
 
 @cli.command("demo")

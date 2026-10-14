@@ -11,8 +11,13 @@ The files deliberately plant overlaps for ArkAngel to find:
 - a handle that shows up in tips, investigator notes, social posts and a
   (simulated) username lookup
 - a vehicle plate mentioned by two tipsters and in the notes
-- a dropped pin and two geotagged photos within a few hundred metres
-- noise that should *not* rank: a vague Boulder tip, a psychic, an unrelated post
+- a dropped pin and two geotagged photos within a few hundred metres, plus
+  tips and notes that only *name* the spot ("Union Station", "the station",
+  "Cherry Creek trail"); `places.csv` maps those names to coordinates so they
+  join the same location cluster
+- a vague "she's in Boulder" tip that the gazetteer links to an older photo
+  geotagged inside Boulder
+- noise that should *not* rank: a psychic, an unrelated post
 
 Photos are generated at run time by `ark-angel demo` with synthetic EXIF data,
 so no binary files live in the repository.

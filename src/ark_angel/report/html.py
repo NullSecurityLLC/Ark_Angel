@@ -58,6 +58,7 @@ details[open] summary::before{content:"- ";}
 .plot{background:var(--surface);border:1px solid var(--line);border-radius:4px}
 .plot svg{display:block;width:100%;height:auto}
 .plot text{font:11px var(--mono);fill:var(--muted)}
+.plot text.place-label{fill:var(--text)}
 .grid line{stroke:var(--line)}
 .pt{fill:var(--dot)}
 .pt.hot{fill:var(--accent)}
@@ -130,11 +131,18 @@ def _plot(report: dict[str, Any], width: int = 560, height: int = 340) -> str:
         x, y = xy(cluster["latitude"], cluster["longitude"])
         r = max(cluster["radius_m"] / 1000 / 111.32 * scale + 10, 14)
         parts.append(f'<circle class="ring" cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}"/>')
+    labelled: set[str] = set()
     for point, hot in points:
         x, y = xy(point["latitude"], point["longitude"])
-        parts.append(f'<circle class="pt{" hot" if hot else ""}" cx="{x:.1f}" cy="{y:.1f}" r="4">'
-                     f'<title>{_e(point["evidence_id"])} · {point["latitude"]:.5f}, {point["longitude"]:.5f}</title>'
-                     "</circle>")
+        named = point.get("place")
+        shape = "rect" if named else "circle"
+        geometry = f'x="{x - 4:.1f}" y="{y - 4:.1f}" width="8" height="8"' if named else f'cx="{x:.1f}" cy="{y:.1f}" r="4"'
+        parts.append(f'<{shape} class="pt{" hot" if hot else ""}" {geometry}>'
+                     f'<title>{_e(point["evidence_id"])}{" names " + _e(named) if named else ""} · '
+                     f'{point["latitude"]:.5f}, {point["longitude"]:.5f}</title></{shape}>')
+        if named and named not in labelled:
+            labelled.add(named)
+            parts.append(f'<text class="place-label" x="{x + 9:.1f}" y="{y + 4:.1f}">{_e(named)}</text>')
     km_per_px = 111.32 / scale
     bar_km = _nice(km_per_px * 100)
     bar_px = bar_km / km_per_px
@@ -142,8 +150,9 @@ def _plot(report: dict[str, Any], width: int = 560, height: int = 340) -> str:
                  'stroke="currentColor" style="stroke:var(--muted)"/>')
     parts.append(f'<text x="14" y="{height - 22}">{bar_km:g} km</text>')
     parts.append("</svg>")
-    note = (f'<p class="plot-note">Framed on the largest cluster. {outside} other point(s) are outside this view, '
-            "listed below.</p>") if outside else ""
+    note = ('<p class="plot-note">Squares are places named in evidence; dots are GPS or dropped pins.'
+            + (f" Framed on the largest cluster; {outside} other point(s) are outside this view, listed below."
+               if outside else "") + "</p>")
     return f'<div class="plot">{"".join(parts)}</div>{note}'
 
 
@@ -186,7 +195,8 @@ def render_html(report: dict[str, Any], notice: Optional[str] = None) -> str:
         osm = (f"https://www.openstreetmap.org/?mlat={c['latitude']:.5f}&amp;mlon={c['longitude']:.5f}"
                f"#map=16/{c['latitude']:.5f}/{c['longitude']:.5f}")
         cluster_items.append(
-            f"<li><span>{c['latitude']:.5f}, {c['longitude']:.5f}<br>"
+            f"<li><span>{_e(', '.join(c['places'])) + '<br>' if c['places'] else ''}"
+            f"{c['latitude']:.5f}, {c['longitude']:.5f}<br>"
             f"<span class=label>{len(c['points'])} item(s) · {c['radius_m']} m spread</span></span>"
             f'<a href="{osm}" target="_blank" rel="noopener">map</a></li>'
         )

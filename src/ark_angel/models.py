@@ -86,6 +86,29 @@ class Location:
 
 
 @dataclass
+class Place:
+    """A named location in a case's gazetteer.
+
+    Attributes:
+        name: Canonical name, e.g. ``"Union Station"``.
+        latitude: Latitude of the place's centre.
+        longitude: Longitude of the place's centre.
+        aliases: Other ways the place is written in evidence.
+        radius_m: How precise a mention is. A landmark is a few hundred metres;
+            a city is kilometres. Mentions of precise places join geo clusters,
+            and coarse places instead collect geotagged evidence inside them.
+        source: Where the entry came from (``"manual"``, ``"import"``, ``"nominatim"``).
+    """
+
+    name: str
+    latitude: float
+    longitude: float
+    aliases: List[str] = field(default_factory=list)
+    radius_m: float = 250.0
+    source: str = "manual"
+
+
+@dataclass
 class Case:
     """A case aggregates leads and evidence for an investigation.
 
@@ -94,6 +117,7 @@ class Case:
         title: Short title for the case.
         leads: Collected leads associated with the case.
         evidence: Evidence items linked to the case.
+        places: The case's gazetteer of named locations.
         created_at: Timestamp indicating when the case was opened.
     """
 
@@ -102,3 +126,4 @@ class Case:
     leads: List[Lead] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
     created_at: datetime = field(default_factory=_utcnow)
+    places: List[Place] = field(default_factory=list)
