@@ -109,6 +109,28 @@ class Place:
 
 
 @dataclass
+class Review:
+    """One investigator decision about a lead. Reviews are append-only; the latest wins.
+
+    Attributes:
+        lead_id: Identifier of the lead reviewed.
+        status: ``"verified"``, ``"dismissed"`` or ``"open"`` (reopened).
+        note: Why. Required for dismissals.
+        reviewer: Who made the call.
+        reviewed_at: ISO-8601 timestamp.
+        evidence_ids: The lead's evidence at review time, so new corroboration
+            arriving later can be spotted.
+    """
+
+    lead_id: str
+    status: str
+    note: str = ""
+    reviewer: str = ""
+    reviewed_at: str = ""
+    evidence_ids: List[str] = field(default_factory=list)
+
+
+@dataclass
 class Case:
     """A case aggregates leads and evidence for an investigation.
 
@@ -118,6 +140,7 @@ class Case:
         leads: Collected leads associated with the case.
         evidence: Evidence items linked to the case.
         places: The case's gazetteer of named locations.
+        reviews: Investigator decisions on leads, oldest first.
         created_at: Timestamp indicating when the case was opened.
     """
 
@@ -127,3 +150,4 @@ class Case:
     evidence: List[Evidence] = field(default_factory=list)
     created_at: datetime = field(default_factory=_utcnow)
     places: List[Place] = field(default_factory=list)
+    reviews: List[Review] = field(default_factory=list)

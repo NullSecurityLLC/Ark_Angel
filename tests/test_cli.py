@@ -135,3 +135,47 @@ def test_place_errors_are_clean(tmp_path: Path) -> None:
     bad = tmp_path / "bad.csv"
     bad.write_text("name,latitude,longitude\nX,not-a-number,0\n")
     assert "bad gazetteer row" in _run(tmp_path, "place", "import", "C1", str(bad)).output
+
+
+def test_lead_review_commands_survive_enrich(tmp_path: Path) -> None:
+    tips = tmp_path / "tips.txt"
+    tips.write_text("call 303-555-0147\nsame number (303) 555-0147\nplate ABC-1234\nplate ABC1234 again\n")
+    _run(tmp_path, "case", "create", "C1", "t")
+    _run(tmp_path, "ingest", "C1", str(tips))
+    _run(tmp_path, "enrich", "C1")
+
+    listing = _run(tmp_path, "lead", "list", "C1").output
+    assert "corr-phone-3035550147" in listing and "corr-plate-ABC1234" in listing
+
+    assert _run(tmp_path, "lead", "verify", "C1", "corr-phone", "--note", "records match", "--by", "me").exit_code == 0
+    refused = _run(tmp_path, "lead", "dismiss", "C1", "corr-plate")
+    assert refused.exit_code == 1 and "--note" in refused.output
+    assert _run(tmp_path, "lead", "dismiss", "C1", "corr-plate", "--note", "wrong car", "--by", "me").exit_code == 0
+
+    _run(tmp_path, "enrich", "C1")  # rebuilds analysis leads; reviews must survive
+    assert "corr-plate" not in _run(tmp_path, "lead", "list", "C1").output
+    assert "corr-plate" in _run(tmp_path, "lead", "list", "C1", "--status", "dismissed").output
+    report = _run(tmp_path, "report", "C1").output
+    assert "verified by me" in report and "Dismissed: 1 hidden" in report
+
+    shown = _run(tmp_path, "lead", "show", "C1", "corr-plate").output
+    assert "dismissed by me: wrong car" in shown
+
+    assert _run(tmp_path, "lead", "reopen", "C1", "corr-plate", "--by", "me").exit_code == 0
+    assert "corr-plate" in _run(tmp_path, "lead", "list", "C1").output
+    assert "Review history" in _run(tmp_path, "lead", "show", "C1", "corr-plate").output
+
+
+def test_dismissed_lead_resurfaces_after_new_evidence(tmp_path: Path) -> None:
+    first, later = tmp_path / "a.txt", tmp_path / "b.txt"
+    first.write_text("call 303-555-0147\nnotes say (303) 555-0147\n")
+    later.write_text("new tip: 303.555.0147 again\n")
+    _run(tmp_path, "case", "create", "C1", "t")
+    _run(tmp_path, "ingest", "C1", str(first))
+    _run(tmp_path, "enrich", "C1")
+    _run(tmp_path, "lead", "dismiss", "C1", "corr-phone", "--note", "tip line's own number", "--by", "me")
+
+    _run(tmp_path, "ingest", "C1", str(later))
+    _run(tmp_path, "enrich", "C1")
+    listing = _run(tmp_path, "lead", "list", "C1").output
+    assert "RESURFACED" in listing and "corr-phone-3035550147" in listing

@@ -16,7 +16,8 @@ from ark_angel.models import Case
 DEMO_CASE_ID = "DEMO"
 DEMO_TITLE = "Riley Tamsin (synthetic demo case)"
 DEMO_NOTICE = ("Synthetic demo. Every person, number, handle and photo in this case is invented, "
-               "and the username lookups are simulated.")
+               "and the username lookups and investigator reviews are simulated.")
+DEMO_REVIEWER = "Det. Demo (simulated)"
 TEXT_SOURCES = ("tips.txt", "investigator_notes.txt", "social_posts.txt")
 
 
@@ -84,4 +85,18 @@ def build_demo_case(store: FileCaseStore, workdir: Path, case_id: str = DEMO_CAS
     correlated = sum(1 for lead in leads if not lead.identifier.startswith("tag-"))
     log(f"Correlated {len(analysis.entity_index)} entities and {len(analysis.points)} geo points "
         f"into {correlated} cross-source leads")
+
+    log("Simulated investigator review:")
+    for ref, status, note in (
+        ("corr-phone-3035550147", "verified", "matches the subpoenaed phone records"),
+        ("corr-place-Boulder", "dismissed", "the Boulder photo was taken two weeks before she went missing"),
+    ):
+        item, _ = pipeline.review_lead(store, case_id, ref, status, note, DEMO_REVIEWER)
+        log(f"  {status} #{item.rank}: {item.lead.summary}")
+
+    late = text_dir / "late_tips.txt"
+    late.write_text(_data_text("late_tips.txt"))
+    pipeline.ingest_text(store, case_id, late)
+    pipeline.enrich(store, case_id)
+    log("A late tip arrives (Boulder bus driver) and enrich re-runs: the dismissed Boulder lead resurfaces")
     return store.get_case(case_id)

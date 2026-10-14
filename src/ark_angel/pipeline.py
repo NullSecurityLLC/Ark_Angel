@@ -11,7 +11,8 @@ from ark_angel.cases.store import FileCaseStore
 from ark_angel.ingest.file_source import FileIngestionSource
 from ark_angel.ingest.image_source import ImageIngestionSource
 from ark_angel.ingest.username_source import UsernameHit, hit_records
-from ark_angel.models import Evidence, Lead, Place
+from ark_angel.models import Evidence, Lead, Place, Review
+from ark_angel.review import RankedLead, make_review, resolve_lead
 
 
 def ingest_text(store: FileCaseStore, case_id: str, path: str | Path) -> list[Evidence]:
@@ -113,3 +114,14 @@ def read_places_csv(path: str | Path) -> list[Place]:
             except (KeyError, TypeError, ValueError) as exc:
                 raise ValueError(f"{path}:{line}: bad gazetteer row ({exc})") from exc
     return places
+
+
+def review_lead(store: FileCaseStore, case_id: str, ref: str, status: str, note: str = "",
+                reviewer: str = "") -> tuple[RankedLead, Review]:
+    """Record a verify/dismiss/reopen decision on the lead ``ref`` points at."""
+    case = store.get_case(case_id)
+    item = resolve_lead(case, ref)
+    review = make_review(item.lead, status, note, reviewer)
+    case.reviews.append(review)
+    store.save_case(case)
+    return item, review

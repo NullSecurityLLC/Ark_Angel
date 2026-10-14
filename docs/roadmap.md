@@ -33,7 +33,9 @@ end-to-end workflow.
 
 ## Phase 3: Investigation collaboration
 
-- Notes and manual tagging on leads; mark leads verified or dismissed.
+- [x] Mark leads verified or dismissed with notes and an audit trail; dismissed
+      leads resurface on new evidence.
+- Free-form notes and tags on evidence items.
 - Provenance on every artifact (which tool, when, with what input).
 - Shareable exports (PDF) for partners and law enforcement.
 

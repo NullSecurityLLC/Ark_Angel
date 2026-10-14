@@ -111,9 +111,10 @@ def enrich(store: FileCaseStore, case_id: str) -> None:
 @click.option("--format", "fmt", type=click.Choice(["text", "md", "json", "html"]), default="text",
               show_default=True, help="Output format.")
 @click.option("--out", "out_path", type=click.Path(dir_okay=False), help="Write to a file instead of stdout.")
-@click.option("--top", type=int, help="Only show the N highest-ranked leads (text format).")
+@click.option("--top", type=int, help="Only show the N highest-ranked open leads (text format).")
+@click.option("--all", "show_all", is_flag=True, help="Also list dismissed leads (text format).")
 @click.pass_obj
-def report(store: FileCaseStore, case_id: str, fmt: str, out_path: str, top: int) -> None:
+def report(store: FileCaseStore, case_id: str, fmt: str, out_path: str, top: int, show_all: bool) -> None:
     """Print or save a case report with ranked, explained leads."""
     from ark_angel.report import build_report
     from ark_angel.report.html import render_html
@@ -121,7 +122,7 @@ def report(store: FileCaseStore, case_id: str, fmt: str, out_path: str, top: int
 
     data = build_report(store.get_case(case_id))
     renderers = {
-        "text": lambda: render_text(data, limit=top),
+        "text": lambda: render_text(data, limit=top, show_dismissed=show_all),
         "md": lambda: render_markdown(data),
         "json": lambda: render_json(data),
         "html": lambda: render_html(data),
@@ -306,6 +307,109 @@ def place_lookup(store: FileCaseStore, case_id: str, query: str, online: bool, p
     click.echo(f"Run `ark-angel enrich {case_id}` to re-correlate.")
 
 
+@cli.group("lead", help="Review leads: verify, dismiss, reopen.")
+def lead_group() -> None:
+    """Lead review commands. LEAD is a number from `lead list`, an identifier, or a unique prefix."""
+
+
+_STATUS_MARKS = {"verified": "verified", "open": "", "dismissed": "dismissed"}
+
+
+@lead_group.command("list")
+@click.argument("case_id")
+@click.option("--status", type=click.Choice(["open", "verified", "dismissed", "all"]), default=None,
+              help="Only leads with this status (default: everything except dismissed).")
+@click.pass_obj
+def lead_list(store: FileCaseStore, case_id: str, status: str) -> None:
+    """List leads with their numbers and identifiers."""
+    from ark_angel.review import lead_score, ranked_leads
+
+    shown = 0
+    for item in ranked_leads(store.get_case(case_id)):
+        state = item.state.status
+        if (status is None and state == "dismissed") or (status not in (None, "all") and state != status):
+            continue
+        shown += 1
+        flag = "RESURFACED" if item.state.resurfaced else _STATUS_MARKS[state]
+        click.echo(f"#{item.rank:<3} [{lead_score(item.lead):5.1f}] {flag:<10} {item.lead.summary}")
+        click.echo(click.style(f"       {item.lead.identifier}", dim=True))
+    if not shown:
+        click.echo("No leads match. Run `ark-angel enrich` first?" if status is None else f"No {status} leads.")
+
+
+@lead_group.command("show")
+@click.argument("case_id")
+@click.argument("lead_ref", metavar="LEAD")
+@click.pass_obj
+def lead_show(store: FileCaseStore, case_id: str, lead_ref: str) -> None:
+    """Show a lead's evidence, reasons and full review history."""
+    from ark_angel.review import lead_score, resolve_lead
+
+    case = store.get_case(case_id)
+    item = resolve_lead(case, lead_ref)
+    lead = item.lead
+    click.echo(f"#{item.rank} {lead.summary}")
+    click.echo(f"  id: {lead.identifier}")
+    click.echo(f"  score: {lead_score(lead):.1f}   status: {item.state.status}"
+               f"{' (resurfaced)' if item.state.resurfaced else ''}")
+    if item.state.new_evidence_ids:
+        click.echo(f"  new since last review: {', '.join(item.state.new_evidence_ids)}")
+    for reason in lead.reasons:
+        click.echo(f"  - {reason}")
+    history = [r for r in case.reviews if r.lead_id == lead.identifier]
+    if item.state.review is not None and item.state.review.lead_id != lead.identifier:
+        history = [r for r in case.reviews if r.lead_id == item.state.review.lead_id]
+        click.echo(f"  (review history carried over from {item.state.review.lead_id}, which shares its evidence)")
+    click.echo("Review history:" if history else "Never reviewed.")
+    for review in history:
+        note = f": {review.note}" if review.note else ""
+        click.echo(f"  {review.reviewed_at}  {review.status:<9} by {review.reviewer}{note}")
+
+
+def _review(store: FileCaseStore, case_id: str, lead_ref: str, status: str, note: str, reviewer: str) -> None:
+    item, review = pipeline.review_lead(store, case_id, lead_ref, status, note or "", reviewer or "")
+    click.echo(f"Marked #{item.rank} {status}: {item.lead.summary}")
+    if review.note:
+        click.echo(f"  note: {review.note}")
+
+
+_note_option = click.option("--note", help="Why. Required when dismissing.")
+_by_option = click.option("--by", "reviewer", help="Reviewer name (default: $ARK_ANGEL_REVIEWER or your login).")
+
+
+@lead_group.command("verify")
+@click.argument("case_id")
+@click.argument("lead_ref", metavar="LEAD")
+@_note_option
+@_by_option
+@click.pass_obj
+def lead_verify(store: FileCaseStore, case_id: str, lead_ref: str, note: str, reviewer: str) -> None:
+    """Mark a lead verified: a human checked it and it holds up."""
+    _review(store, case_id, lead_ref, "verified", note, reviewer)
+
+
+@lead_group.command("dismiss")
+@click.argument("case_id")
+@click.argument("lead_ref", metavar="LEAD")
+@_note_option
+@_by_option
+@click.pass_obj
+def lead_dismiss(store: FileCaseStore, case_id: str, lead_ref: str, note: str, reviewer: str) -> None:
+    """Dismiss a lead. It comes back on its own if new evidence joins it later."""
+    _review(store, case_id, lead_ref, "dismissed", note, reviewer)
+
+
+@lead_group.command("reopen")
+@click.argument("case_id")
+@click.argument("lead_ref", metavar="LEAD")
+@_note_option
+@_by_option
+@click.pass_obj
+def lead_reopen(store: FileCaseStore, case_id: str, lead_ref: str, note: str, reviewer: str) -> None:
+    """Put a verified or dismissed lead back in the open list."""
+    _review(store, case_id, lead_ref, "open", note, reviewer)
+
+
 @cli.command("demo")
 @click.option("--out", "out_path", default="ark_angel_demo.html", show_default=True,
               type=click.Path(dir_okay=False), help="Where to write the HTML case file.")
@@ -322,15 +426,27 @@ def demo(store: FileCaseStore, out_path: str, case_id: str) -> None:
     case = build_demo_case(store, workdir, case_id, log=click.echo)
     data = build_report(case)
 
-    click.echo(click.style("\nTop leads", bold=True))
-    for rank, lead in enumerate(data["leads"][:5], start=1):
-        click.echo(f"  {rank}. [{lead['score']:>5.1f}] {lead['summary']}")
-        for reason in lead["reasons"][:2]:
-            click.echo(click.style(f"              {reason}", dim=True))
+    from ark_angel.report.text import review_line
+
+    def show(lead: dict, label: str) -> None:
+        click.echo(f"  {label} [{lead['score']:>5.1f}] {lead['summary']}")
+        details = [review_line(lead)] if lead["review"] else []
+        for line in details + lead["reasons"][:2 - len(details)]:
+            click.echo(click.style(f"              {line}", dim=True))
+
+    verified = [lead for lead in data["leads"] if lead["status"] == "verified"]
+    open_leads = [lead for lead in data["leads"] if lead["status"] == "open"]
+    if verified:
+        click.echo(click.style("\nVerified", bold=True))
+        for lead in verified:
+            show(lead, f"#{lead['rank']:<2}")
+    click.echo(click.style("\nTop open leads", bold=True))
+    for position, lead in enumerate(open_leads[:5], start=1):
+        show(lead, f"{position}.")
 
     Path(out_path).write_text(render_html(data, notice=DEMO_NOTICE))
     click.echo(f"\nWrote HTML case file to {out_path}")
-    click.echo(f"Explore further: ark-angel report {case_id} --top 10   |   ark-angel pivot {case_id}")
+    click.echo(f"Explore further: ark-angel lead list {case_id}   |   ark-angel report {case_id} --all")
 
 
 if __name__ == "__main__":
