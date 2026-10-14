@@ -4,8 +4,8 @@ from __future__ import annotations
 from typing import Optional
 
 
-def load_exif(image_path: str) -> dict:
-    """Return the piexif tag dict for an image, or ``{}`` if it has none."""
+def load_exif(image_path) -> dict:
+    """Return the piexif tag dict for an image path or file-like object, or ``{}`` if it has none."""
     try:
         import piexif
         from PIL import Image
@@ -17,6 +17,30 @@ def load_exif(image_path: str) -> dict:
         return piexif.load(raw)
     except Exception:
         return {}
+
+
+def load_exif_bytes(data: bytes) -> dict:
+    """:func:`load_exif` for image bytes held in memory, e.g. an email attachment."""
+    import io
+
+    return load_exif(io.BytesIO(data))
+
+
+def exif_metadata(exif: dict) -> dict:
+    """The fields correlation uses: ``latitude``/``longitude``, ``timestamp``, ``device``."""
+    metadata: dict = {}
+    if not exif:
+        return metadata
+    coords = gps_from_exif(exif)
+    if coords:
+        metadata["latitude"], metadata["longitude"] = coords
+    timestamp = timestamp_from_exif(exif)
+    if timestamp:
+        metadata["timestamp"] = timestamp
+    device = device_from_exif(exif)
+    if device:
+        metadata["device"] = device
+    return metadata
 
 
 def dms_to_decimal(dms: tuple, ref: str) -> float:

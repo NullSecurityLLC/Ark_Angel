@@ -23,7 +23,7 @@ TEXT_SOURCES = ("investigator_notes.txt", "social_posts.txt")
 
 
 def _data_text(name: str) -> str:
-    return (resources.files("ark_angel") / "demo_data" / name).read_text()
+    return (resources.files("ark_angel") / "demo_data" / name).read_text(encoding="utf-8")
 
 
 def make_photo(path: Path, latitude: float, longitude: float, timestamp: str, make: str, model: str) -> Path:
@@ -50,6 +50,22 @@ def make_photo(path: Path, latitude: float, longitude: float, timestamp: str, ma
     return path
 
 
+def make_email(path: Path, photo: Path) -> Path:
+    """Write Sam's synthetic tip-line email, with a geotagged photo attached."""
+    from email.message import EmailMessage
+
+    message = EmailMessage()
+    message["From"] = "Sam K <sam.k.demo@example.org>"
+    message["To"] = "Tip Line <tips@example.gov>"
+    message["Date"] = "Mon, 05 Oct 2026 07:42:00 -0600"
+    message["Subject"] = "Photo from the night I last saw Riley"
+    message["Message-ID"] = "<sam-photo-1@example.org>"
+    message.set_content(_data_text("sam_email.txt"))
+    message.add_attachment(photo.read_bytes(), maintype="image", subtype="jpeg", filename=photo.name)
+    path.write_bytes(bytes(message))
+    return path
+
+
 def build_demo_case(store: FileCaseStore, workdir: Path, case_id: str = DEMO_CASE_ID, log=print) -> Case:
     """(Re)create the demo case: ingest text, photos and simulated hits, then enrich."""
     store.delete_case(case_id)
@@ -59,12 +75,18 @@ def build_demo_case(store: FileCaseStore, workdir: Path, case_id: str = DEMO_CAS
     text_dir = workdir / "text"
     text_dir.mkdir(parents=True, exist_ok=True)
     export = text_dir / "tips.csv"
-    export.write_text(_data_text("tips.csv"))
+    export.write_text(_data_text("tips.csv"), encoding="utf-8")
     tips = pipeline.ingest_csv(store, case_id, export, CsvTipSource())
     log(f"  imported {len(tips.evidence):>2} tips from the tip-line export tips.csv ({tips.mapping.describe()})")
+    chat = text_dir / "volunteer_chat.txt"
+    chat.write_text(_data_text("volunteer_chat.txt"), encoding="utf-8")
+    messages = pipeline.ingest_chat(store, case_id, chat)
+    log(f"  imported {len(messages.evidence):>2} messages from the volunteers' WhatsApp export "
+        f"({messages.skipped} system/media lines skipped)")
+
     for name in TEXT_SOURCES:
         path = text_dir / name
-        path.write_text(_data_text(name))
+        path.write_text(_data_text(name), encoding="utf-8")
         count = len(pipeline.ingest_text(store, case_id, path))
         log(f"  ingested {count:>2} lines from {name}")
 
@@ -75,6 +97,12 @@ def build_demo_case(store: FileCaseStore, workdir: Path, case_id: str = DEMO_CAS
         log(f"  ingested photo {photo['name']} (GPS + timestamp + device)" if evidence else
             f"  no EXIF in {photo['name']}")
 
+    attached = make_photo(workdir / "mail" / "bench_3am.jpg", 39.7521, -104.9993, "2026:10:01 02:58:00",
+                          "Apple", "iPhone 12")
+    mail = pipeline.ingest_email(store, case_id, make_email(workdir / "mail" / "sam_tip.eml", attached))
+    log(f"  imported {mail.messages} email with {mail.attachments_with_gps} geotagged photo attachment "
+        "(quoted reply text dropped)")
+
     hits = [UsernameHit(**hit) for hit in json.loads(_data_text("username_hits.json"))["hits"]]
     pipeline.ingest_username_hits(store, case_id, hits, simulated=True)
     log(f"  added {len(hits)} simulated username hits")
@@ -82,7 +110,7 @@ def build_demo_case(store: FileCaseStore, workdir: Path, case_id: str = DEMO_CAS
     unresolved = suggest_places(store.get_case(case_id).evidence)
     log(f"  evidence names {len(unresolved)} unresolved place(s): {', '.join(s.name for s in unresolved)}")
     gazetteer = workdir / "places.csv"
-    gazetteer.write_text(_data_text("places.csv"))
+    gazetteer.write_text(_data_text("places.csv"), encoding="utf-8")
     places = pipeline.add_places(store, case_id, pipeline.read_places_csv(gazetteer))
     log(f"  added {len(places)} landmarks from the case gazetteer: {', '.join(p.name for p in places)}")
     resolved = [r for r in pipeline.resolve_unmatched_places(store, case_id, ["CO"]) if r.status == "resolved"]
@@ -104,7 +132,7 @@ def build_demo_case(store: FileCaseStore, workdir: Path, case_id: str = DEMO_CAS
         log(f"  {status} #{item.rank}: {item.lead.summary}")
 
     late = text_dir / "late_tips.txt"
-    late.write_text(_data_text("late_tips.txt"))
+    late.write_text(_data_text("late_tips.txt"), encoding="utf-8")
     pipeline.ingest_text(store, case_id, late)
     pipeline.enrich(store, case_id)
     log("A late tip arrives (Boulder bus driver) and enrich re-runs: the dismissed Boulder lead resurfaces")

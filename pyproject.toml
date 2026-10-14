@@ -1,9 +1,11 @@
 [project]
 name = "ark-angel"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Pattern recognition that surfaces leads in missing-person case evidence"
 authors = [{ name = "Ark Angel Team" }]
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.9"
 dependencies = [
     "click>=8.0",
@@ -11,13 +13,28 @@ dependencies = [
     "piexif>=1.1",
     "requests>=2.28",
 ]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Other Audience",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+]
+
+[project.urls]
+Homepage = "https://github.com/NullSecurityLLC/Ark_Angel"
+Releases = "https://github.com/NullSecurityLLC/Ark_Angel/releases"
 
 [project.scripts]
 "ark-angel" = "ark_angel.cli:cli"
 
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = { attr = "ark_angel.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

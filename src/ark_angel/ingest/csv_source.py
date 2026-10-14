@@ -19,7 +19,7 @@ from ark_angel.ingest.base import IngestionSource
 from ark_angel.models import Evidence, Lead
 
 # Normalized header names (lowercase, alphanumerics only) for each role, best first.
-TEXT_HEADERS = ("tip", "tiptext", "narrative", "description", "details", "summary", "message", "comments",
+TEXT_HEADERS = ("tip", "tiptext", "narrative", "description", "details", "summary", "message", "content", "comments",
                 "comment", "information", "info", "body", "text", "notes", "note")
 ID_HEADERS = ("tipid", "tipno", "tipnumber", "id", "no", "reference", "ref", "refno", "casenumber",
               "ticket", "ticketid", "record", "recordid")

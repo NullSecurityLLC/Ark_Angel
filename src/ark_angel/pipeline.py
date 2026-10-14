@@ -9,7 +9,9 @@ from ark_angel.analysis.correlate import CaseAnalysis, analyze_case
 from ark_angel.geo.builtin import Resolution
 from ark_angel.analysis.rules import RuleBasedAnalyzer
 from ark_angel.cases.store import FileCaseStore
+from ark_angel.ingest.chat_source import ChatImport, ChatSource
 from ark_angel.ingest.csv_source import CsvImport, CsvTipSource
+from ark_angel.ingest.email_source import EmailImport, EmailSource
 from ark_angel.ingest.file_source import FileIngestionSource
 from ark_angel.ingest.image_source import ImageIngestionSource
 from ark_angel.ingest.username_source import UsernameHit, hit_records
@@ -102,7 +104,7 @@ def read_places_csv(path: str | Path) -> list[Place]:
     Aliases are separated by ``;``.
     """
     places = []
-    with open(path, newline="") as handle:
+    with open(path, newline="", encoding="utf-8-sig") as handle:
         for line, row in enumerate(csv.DictReader(handle), start=2):
             try:
                 places.append(Place(
@@ -168,3 +170,20 @@ def place_from_builtin(name: str, states: Iterable[str] = ()) -> Place:
         hint = f" Candidates: {options}. Narrow it with --state." if options else ""
         raise ValueError(f"can't place {name!r} from the built-in gazetteer: {resolution.why}.{hint}")
     return resolution.entry.to_place(name)
+
+
+def ingest_email(store: FileCaseStore, case_id: str, path: str | Path, source: Optional[str] = None) -> EmailImport:
+    """Add messages (and geotagged image attachments) from .eml/.mbox/a folder of .eml."""
+    store.get_case(case_id)
+    result = EmailSource(source).load(path)
+    store.add_evidence(case_id, result.evidence)
+    return result
+
+
+def ingest_chat(store: FileCaseStore, case_id: str, path: str | Path, fmt: str = "auto", dayfirst: bool = False,
+                source: Optional[str] = None) -> ChatImport:
+    """Add one evidence item per message from a WhatsApp or Telegram export."""
+    store.get_case(case_id)
+    result = ChatSource(fmt, dayfirst, source).load(path)
+    store.add_evidence(case_id, result.evidence)
+    return result

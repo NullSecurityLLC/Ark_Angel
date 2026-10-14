@@ -1,0 +1,134 @@
+# Builds downloadable ArkAngel packages.
+#
+# - Pull requests that touch packaging: build everything and smoke-test it, no release.
+# - Push a tag like v0.2.0: build, smoke-test, then create a DRAFT GitHub release with
+#   the wheel, the source archive, standalone executables and SHA256SUMS. A maintainer
+#   reviews the draft and clicks Publish.
+# - "Run workflow" (workflow_dispatch): build and keep the files as workflow artifacts.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "packaging/**"
+      - "src/ark_angel/__init__.py"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-package:
+    name: Wheel and source archive
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check the tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(python -c "import sys; sys.path.insert(0, 'src'); import ark_angel; print(ark_angel.__version__)")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match ark_angel.__version__ ($version)"
+            exit 1
+          fi
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --outdir dist
+      - name: Smoke-test the wheel
+        run: |
+          python -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          ark-angel --version
+          ark-angel --data-dir cases demo --out demo.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-package
+          path: dist/*
+          if-no-files-found: error
+
+  executable:
+    name: Executable (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-x86_64
+            binary: ark-angel
+          - os: windows-latest
+            label: windows-x86_64
+            binary: ark-angel.exe
+          - os: macos-latest
+            label: macos-arm64
+            binary: ark-angel
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build with PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . pyinstaller==6.22.3
+          pyinstaller --onefile --name ark-angel --collect-data ark_angel \
+            --distpath dist --workpath build/pyinstaller --specpath build packaging/ark_angel_entry.py
+      - name: Smoke-test the executable
+        run: |
+          exe="$GITHUB_WORKSPACE/dist/${{ matrix.binary }}"
+          cd "$RUNNER_TEMP"
+          "$exe" --version
+          "$exe" --data-dir cases demo --out demo.html
+          test -s demo.html
+          "$exe" place find Boulder --state CO
+      - name: Name the file for its platform
+        run: |
+          mkdir -p out
+          case "${{ matrix.binary }}" in
+            *.exe) cp "dist/${{ matrix.binary }}" "out/ark-angel-${{ matrix.label }}.exe" ;;
+            *)     cp "dist/${{ matrix.binary }}" "out/ark-angel-${{ matrix.label }}" ;;
+          esac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: executable-${{ matrix.label }}
+          path: out/*
+          if-no-files-found: error
+
+  draft-release:
+    name: Draft GitHub release
+    needs: [python-package, executable]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd artifacts
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --title "ArkAngel $GITHUB_REF_NAME" \
+            --generate-notes

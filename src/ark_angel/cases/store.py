@@ -56,7 +56,7 @@ class FileCaseStore(CaseStore):
         path = self._path(case_id)
         if not path.exists():
             raise CaseNotFoundError(case_id)
-        return _case_from_dict(json.loads(path.read_text()))
+        return _case_from_dict(json.loads(path.read_text(encoding="utf-8")))
 
     def list_cases(self) -> list[str]:
         if not self.data_dir.exists():
@@ -72,7 +72,7 @@ class FileCaseStore(CaseStore):
 
     def _write(self, case: Case) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        self._path(case.identifier).write_text(json.dumps(_case_to_dict(case), indent=2))
+        self._path(case.identifier).write_text(json.dumps(_case_to_dict(case), indent=2), encoding="utf-8")
 
 
 def _upsert(existing: list[_T], incoming: Iterable[_T]) -> list[_T]:

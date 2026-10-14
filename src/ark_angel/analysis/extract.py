@@ -16,7 +16,8 @@ EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 DATETIME_PATTERN = re.compile(r"\b(\d{4})[-:/](\d{2})[-:/](\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?\b")
 COORDS_PATTERN = re.compile(r"(?<![\d.])(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})(?![\d.])")
 PLATE_PATTERN = re.compile(
-    r"\b(?:plate|tag|license)(?:\s+(?:number|no\.?|#))?\s*[:#]?\s*([A-Z0-9][A-Z0-9 -]{2,8}[A-Z0-9])\b",
+    r"\b(?:licen[cs]e\s+plate|plates?|tags?|licen[cs]e)(?:\s+(?:number|no\.?|#))?\s*[:#]?\s*"
+    r"([A-Z0-9][A-Z0-9 -]{2,8}[A-Z0-9])\b",
     re.IGNORECASE,
 )
 HANDLE_AT_PATTERN = re.compile(r"(?<![\w@.])@([A-Za-z0-9_](?:[A-Za-z0-9_.]{1,28}[A-Za-z0-9_]))")

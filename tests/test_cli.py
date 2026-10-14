@@ -13,7 +13,7 @@ def _run(tmp_path: Path, *args: str):
 
 
 def test_version_importable() -> None:
-    assert __version__ == "0.1.0"
+    assert __version__ == "0.2.0"
 
 
 def test_cli_help() -> None:
@@ -87,7 +87,7 @@ def test_report_formats_and_out_file(tmp_path: Path) -> None:
         out = tmp_path / f"r.{fmt}"
         result = _run(tmp_path, "report", "C1", "--format", fmt, "--out", str(out))
         assert result.exit_code == 0, result.output
-        assert out.read_text()
+        assert out.read_text(encoding="utf-8")
 
 
 def test_pivot_without_online_only_lists_handles(tmp_path: Path) -> None:
@@ -236,3 +236,26 @@ def test_builtin_gazetteer_commands(tmp_path: Path) -> None:
     assert ambiguous.exit_code == 1 and "Narrow it with --state" in ambiguous.output
     half = _run(tmp_path, "place", "add", "C1", "X", "39.7")
     assert half.exit_code == 1 and "both LATITUDE and LONGITUDE" in half.output
+
+
+def test_email_and_chat_commands(tmp_path: Path) -> None:
+    from email.message import EmailMessage
+
+    message = EmailMessage()
+    message["From"], message["To"] = "sam@example.org", "tips@example.gov"
+    message["Subject"], message["Message-ID"] = "hi", "<x1@example.org>"
+    message.set_content("call 303-555-0147")
+    (tmp_path / "tip.eml").write_bytes(bytes(message))
+    (tmp_path / "chat.txt").write_text("10/02/26, 8:15 PM - Jo: same number (303) 555-0147\n"
+                                       "10/02/26, 8:16 PM - Jo: <Media omitted>\n")
+    _run(tmp_path, "case", "create", "C1", "t")
+
+    assert "Imported 1 email(s)" in _run(tmp_path, "ingest", "C1", str(tmp_path / "tip.eml")).output
+    hint = _run(tmp_path, "ingest", "C1", str(tmp_path / "chat.txt")).output
+    assert "looks like a WhatsApp export" in hint
+    chat = _run(tmp_path, "ingest-chat", "C1", str(tmp_path / "chat.txt"), "--source", "volunteers")
+    assert "Imported 1 whatsapp message(s)" in chat.output and "1 system or media-only" in chat.output
+
+    _run(tmp_path, "enrich", "C1")
+    report = _run(tmp_path, "report", "C1").output
+    assert "Phone 3035550147 appears in 3 items across 3 sources" in report  # email, plain text, chat
