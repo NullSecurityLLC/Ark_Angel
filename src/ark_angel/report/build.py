@@ -1,24 +1,43 @@
 """Assemble a case into a plain-data report that every renderer shares."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from ark_angel.analysis.correlate import CORRELATED_PREFIXES, analyze_case
-from ark_angel.analysis.rules import RuleBasedAnalyzer
-from ark_angel.models import Case, Lead
+from ark_angel.models import Case, Review
+from ark_angel.review import RankedLead, lead_score, ranked_leads
 
-_rules = RuleBasedAnalyzer()
+__all__ = ["build_report", "lead_score"]
 
 
-def lead_score(lead: Lead) -> float:
-    """A lead's stored score, falling back to rule weights for older case files."""
-    return lead.score or _rules.score_lead(lead)
+def _review_dict(review: Optional[Review]) -> Optional[dict[str, Any]]:
+    if review is None:
+        return None
+    return {"status": review.status, "note": review.note, "reviewer": review.reviewer,
+            "reviewed_at": review.reviewed_at}
+
+
+def _lead_dict(item: RankedLead) -> dict[str, Any]:
+    lead, state = item.lead, item.state
+    return {
+        "rank": item.rank,
+        "identifier": lead.identifier,
+        "summary": lead.summary,
+        "score": round(lead_score(lead), 2),
+        "reasons": list(lead.reasons),
+        "evidence_ids": list(lead.evidence_ids),
+        "source": lead.source,
+        "correlated": lead.identifier.startswith(CORRELATED_PREFIXES),
+        "status": state.status,
+        "resurfaced": state.resurfaced,
+        "new_evidence_ids": list(state.new_evidence_ids),
+        "review": _review_dict(state.review),
+    }
 
 
 def build_report(case: Case) -> dict[str, Any]:
-    """Return ranked leads plus the entity index, geo clusters and timeline."""
+    """Return leads in review order plus the entity index, geo clusters and timeline."""
     analysis = analyze_case(case.evidence, places=case.places)
-    leads = sorted(case.leads, key=lead_score, reverse=True)
     return {
         "case": {
             "identifier": case.identifier,
@@ -29,18 +48,7 @@ def build_report(case: Case) -> dict[str, Any]:
             "sources": sorted({(item.metadata or {}).get("source") or item.identifier.split(":", 1)[0]
                                for item in case.evidence}),
         },
-        "leads": [
-            {
-                "identifier": lead.identifier,
-                "summary": lead.summary,
-                "score": round(lead_score(lead), 2),
-                "reasons": list(lead.reasons),
-                "evidence_ids": list(lead.evidence_ids),
-                "source": lead.source,
-                "correlated": lead.identifier.startswith(CORRELATED_PREFIXES),
-            }
-            for lead in leads
-        ],
+        "leads": [_lead_dict(item) for item in ranked_leads(case)],
         "entities": [
             {
                 "kind": kind,

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Iterable, TypeVar
 
 from ark_angel.cases.base import CaseStore
-from ark_angel.models import Case, Entity, Evidence, Lead, Place
+from ark_angel.models import Case, Entity, Evidence, Lead, Place, Review
 
 CASE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
@@ -102,4 +102,5 @@ def _case_from_dict(data: dict) -> Case:
         evidence=[Evidence(**item) for item in data.get("evidence", [])],
         created_at=datetime.fromisoformat(data["created_at"]),
         places=[Place(**place) for place in data.get("places", [])],
+        reviews=[Review(**review) for review in data.get("reviews", [])],
     )

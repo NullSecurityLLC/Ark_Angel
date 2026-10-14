@@ -29,11 +29,14 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
   - `rules.py`: per-item tagging ("phone present in tips.txt:3").
 - **geo/**: shared EXIF helpers (`exif.py`), `ExifGeoResolver`, and the opt-in
   Nominatim lookup (`nominatim.py`), which is the only network call in place handling.
-- **cases/**: `FileCaseStore`, one JSON file per case (evidence, leads and the
-  case gazetteer) with validated IDs and upsert-by-identifier writes.
+- **cases/**: `FileCaseStore`, one JSON file per case (evidence, leads, the
+  case gazetteer and the review log) with validated IDs and upsert-by-identifier writes.
 - **report/**: `build.py` assembles a plain-data report that the text,
   Markdown, JSON and self-contained HTML renderers share.
-- **pipeline.py**: the ingest and enrich steps shared by the CLI and the demo.
+- **review.py**: lead review. The append-only `Case.reviews` log is matched
+  back onto freshly rebuilt leads, with score-ordered lead numbers, geo-cluster
+  carry-over by evidence overlap, and dismissed leads resurfacing on new evidence.
+- **pipeline.py**: the ingest, enrich and review steps shared by the CLI and the demo.
   `enrich` replaces earlier analysis leads, so it is always safe to re-run.
 - **demo.py** + **demo_data/**: the synthetic case behind `ark-angel demo`.
 

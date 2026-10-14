@@ -5,6 +5,8 @@ import math
 from html import escape
 from typing import Any, Optional
 
+from ark_angel.report.text import review_line
+
 _CSS = """
 :root{
   --bg:#14120e;--surface:#1c1a15;--surface-2:#25221b;--text:#ece6d8;--muted:#a59c88;
@@ -35,7 +37,7 @@ h2{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;col
 section{margin-top:44px}
 ol.leads{list-style:none;margin:0;padding:0}
 .lead{display:grid;grid-template-columns:44px minmax(0,1fr);gap:4px 14px;padding:16px 0;border-bottom:1px solid var(--line)}
-.rank{font:600 22px/1.1 var(--mono);color:var(--muted);text-align:right}
+.rank{font:600 18px/1.2 var(--mono);color:var(--muted);text-align:right}
 .lead:nth-child(-n+3) .rank{color:var(--accent)}
 .lead-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px}
 .summary{font-weight:600;font-size:16px;overflow-wrap:anywhere}
@@ -81,6 +83,14 @@ tr.multi td:first-child{box-shadow:inset 3px 0 var(--accent)}
 td.count{font-family:var(--mono);text-align:right}
 footer{margin-top:56px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:16px}
 .empty{color:var(--muted);font-style:italic}
+h3{font:600 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:26px 0 2px}
+h3:first-child{margin-top:0}
+.review{grid-column:2;margin:4px 0 2px;padding:6px 10px;font:12.5px/1.5 var(--mono);border-left:2px solid var(--accent);
+  background:var(--accent-soft);overflow-wrap:anywhere}
+.review.dismissed{border-left-color:var(--muted);background:var(--surface-2)}
+.review.resurfaced{border-left-style:dashed}
+.leads.verified .rank{color:var(--accent)}
+.dim{color:var(--muted);font:12px/1.5 var(--mono)}
 .signals>summary{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
   padding:12px 0;border-bottom:1px solid var(--line)}
 .signals td{overflow-wrap:anywhere}
@@ -164,31 +174,63 @@ def _nice(value: float) -> float:
     return 10 * exp
 
 
+def _lead_card(lead: dict[str, Any], top: float, expanded: bool) -> str:
+    width = max(lead["score"] / top * 100, 2)
+    reasons = "".join(f"<li>{_e(r)}</li>" for r in lead["reasons"])
+    chips = "".join(f'<span class="chip">{_e(eid)}</span>' for eid in lead["evidence_ids"][:8])
+    chips_html = f'<div class="chips">{chips}</div>' if chips else ""
+    details = (f'<details{" open" if expanded else ""}><summary>why this ranks here</summary>'
+               f'<ul class="reasons">{reasons}</ul></details>') if reasons else ""
+    status = review_line(lead)
+    kind = "resurfaced" if lead["resurfaced"] else lead["status"]
+    review_html = f'<p class="review {kind}">{_e(status)}</p>' if status else ""
+    return (
+        f'<li class="lead"><div class="rank">#{lead["rank"]}</div>'
+        f'<div class="lead-head"><span class="summary">{_e(lead["summary"])}</span>'
+        f'<span class="score">{lead["score"]:.1f}</span></div>'
+        f'<div class="bar"><i style="width:{width:.0f}%"></i></div>'
+        f"{review_html}{details}{chips_html}</li>"
+    )
+
+
+def _rows_table(title: str, rows: list[str]) -> str:
+    return (f'<details class="signals"><summary>{_e(title)} ({len(rows)})</summary>'
+            '<div class="table-wrap"><table><tbody>' + "".join(rows) + "</tbody></table></div></details>")
+
+
+def _leads_html(leads: list[dict[str, Any]]) -> str:
+    """Verified leads first, then open cross-source leads, then collapsed signals and dismissals."""
+    top = max((lead["score"] for lead in leads), default=0) or 1
+    verified = [lead for lead in leads if lead["status"] == "verified"]
+    open_leads = [lead for lead in leads if lead["status"] == "open"]
+    correlated = [lead for lead in open_leads if lead["correlated"] or lead["resurfaced"]]
+    signals = [lead for lead in open_leads if lead not in correlated]
+    dismissed = [lead for lead in leads if lead["status"] == "dismissed"]
+
+    parts = []
+    if verified:
+        parts.append('<h3>Verified</h3><ol class="leads verified">'
+                     + "".join(_lead_card(lead, top, expanded=False) for lead in verified) + "</ol>")
+        parts.append("<h3>Open</h3>")
+    if correlated:
+        parts.append('<ol class="leads">'
+                     + "".join(_lead_card(lead, top, expanded=i < 3) for i, lead in enumerate(correlated)) + "</ol>")
+    else:
+        parts.append('<p class="empty">No open cross-source leads. Run enrich after adding evidence.</p>')
+    if signals:
+        parts.append(_rows_table("Single-source signals", [
+            f'<tr><td class="score-cell">#{lead["rank"]}</td><td class="score-cell">{lead["score"]:.1f}</td>'
+            f'<td>{_e(lead["summary"])}</td></tr>' for lead in signals]))
+    if dismissed:
+        parts.append(_rows_table("Dismissed", [
+            f'<tr><td class="score-cell">#{lead["rank"]}</td><td>{_e(lead["summary"])}'
+            f'<br><span class="dim">{_e(review_line(lead))}</span></td></tr>' for lead in dismissed]))
+    return "".join(parts)
+
+
 def render_html(report: dict[str, Any], notice: Optional[str] = None) -> str:
     case = report["case"]
     leads = report["leads"]
-    top = max((lead["score"] for lead in leads), default=0) or 1
-
-    lead_items: list[str] = []
-    signal_rows: list[str] = []
-    for lead in leads:
-        rank = len(lead_items) + 1
-        width = max(lead["score"] / top * 100, 2)
-        reasons = "".join(f"<li>{_e(r)}</li>" for r in lead["reasons"])
-        chips = "".join(f'<span class="chip">{_e(eid)}</span>' for eid in lead["evidence_ids"][:8])
-        chips_html = f'<div class="chips">{chips}</div>' if chips else ""
-        details = (f'<details{" open" if rank <= 3 else ""}><summary>why this ranks here</summary>'
-                   f'<ul class="reasons">{reasons}</ul></details>') if reasons else ""
-        if not lead["correlated"]:
-            signal_rows.append(f'<tr><td class="score-cell">{lead["score"]:.1f}</td><td>{_e(lead["summary"])}</td></tr>')
-            continue
-        lead_items.append(
-            f'<li class="lead"><div class="rank">{len(lead_items) + 1:02d}</div>'
-            f'<div class="lead-head"><span class="summary">{_e(lead["summary"])}</span>'
-            f'<span class="score">{lead["score"]:.1f}</span></div>'
-            f'<div class="bar"><i style="width:{width:.0f}%"></i></div>'
-            f"{details}{chips_html}</li>"
-        )
 
     cluster_items = []
     for c in sorted(report["clusters"], key=lambda c: -len(c["points"])):
@@ -214,14 +256,7 @@ def render_html(report: dict[str, Any], notice: Optional[str] = None) -> str:
     )
 
     notice_html = f'<p class="notice">{_e(notice)}</p>' if notice else ""
-    if lead_items:
-        leads_html = '<ol class="leads">' + "".join(lead_items) + "</ol>"
-    else:
-        leads_html = '<p class="empty">No cross-source leads yet. Run enrich.</p>'
-    if signal_rows:
-        leads_html += (f'<details class="signals"><summary>Single-source signals ({len(signal_rows)})</summary>'
-                       '<div class="table-wrap"><table><tbody>' + "".join(signal_rows) + "</tbody></table></div>"
-                       "</details>")
+    leads_html = _leads_html(leads)
     if entity_rows:
         entities_html = ('<div class="table-wrap"><table><thead><tr><th>Kind</th><th>Value</th><th>Seen</th>'
                          "<th>Evidence</th></tr></thead><tbody>" + entity_rows + "</tbody></table></div>")

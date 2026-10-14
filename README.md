@@ -27,6 +27,7 @@ There is no AI model in the loop. Every lead comes from pattern matching you can
 - **Geo clustering**: EXIF GPS from photos and coordinates dropped into tips are clustered by distance, so three sightings within a few hundred metres surface together.
 - **Place names**: each case has a gazetteer mapping names like "Union Station" or "the station" to coordinates. Tips that only *name* a spot join the same location cluster as the photos taken there. A vague "she's in Boulder" gets linked to any photo geotagged inside Boulder. `place suggest` lists the place names your evidence uses that the gazetteer doesn't cover yet.
 - **Timeline**: every dated item, in order, with the most recent activity flagged.
+- **Lead review**: verify or dismiss leads, with a note on why. Every decision is kept as an audit trail. A dismissed lead comes back by itself, flagged as resurfaced, when new evidence joins it.
 - **Username lookup**: check a handle against public platforms (opt-in, network required). Hits are labelled unverified.
 - **Reports**: terminal, Markdown, JSON, or a self-contained HTML case file that opens offline.
 
@@ -64,19 +65,25 @@ ark-angel demo
 engine pull them out, ranked:
 
 ```text
-Top leads
+Verified
+  #3  [ 13.0] Phone 3035550147 appears in 3 items across 3 sources
+              verified by Det. Demo (simulated): matches the subpoenaed phone records
+
+Top open leads
   1. [ 23.5] Location cluster around Union Station: 7 items within 295 m
-              named places: Union Station, Cherry Creek Trail
   2. [ 21.0] Handle rt_demo_owl appears in 6 items across 4 sources
-  3. [ 13.0] Phone 3035550147 appears in 3 items across 3 sources
-              written 3 different ways: (303) 555-0147 | 303-555-0147 | 303.555.0147
-  4. [ 11.0] Plate ABC1234 appears in 3 items across 2 sources
+  3. [ 11.0] Plate ABC1234 appears in 3 items across 2 sources
+  4. [ 10.0] Place Boulder appears in 3 items across 3 sources
+              RESURFACED: dismissed by Det. Demo (simulated): the Boulder photo was taken
+              two weeks before she went missing. 1 new item(s) since: late_tips.txt:1
   5. [  8.0] Email sam.k.demo@example.org appears in 2 items across 2 sources
 ```
 
 The cluster at the top is a dropped pin, two geotagged photos, and four tips,
-notes and posts that only name the spot. The noise in the data (a psychic, an
-unrelated post) stays at the bottom.
+notes and posts that only name the spot. The demo then plays investigator: it
+verifies the phone and dismisses the Boulder lead. A late tip from a Boulder bus
+driver then arrives, and the dismissed lead comes back with the new evidence
+named. The noise in the data (a psychic, an unrelated post) stays at the bottom.
 
 ## Working a real case
 
@@ -102,13 +109,37 @@ ark-angel enrich C1
 ark-angel pivot C1            # list the handles it would check
 ark-angel pivot C1 --online   # actually check them, then re-run enrich
 
+# Review: LEAD is the number from `lead list`, an id, or a unique id prefix
+ark-angel lead list C1
+ark-angel lead verify C1 3 --note "matches phone records"
+ark-angel lead dismiss C1 corr-phone-3035550147 --note "the tip line's own number"   # a note is required
+ark-angel lead show C1 3        # evidence, reasons, review history
+ark-angel lead reopen C1 3
+
 # Results
-ark-angel report C1 --top 10
+ark-angel report C1 --top 10    # verified first, then open; --all includes dismissed
 ark-angel report C1 --format html --out C1.html   # also: md, json
 ```
 
 Case data is stored as JSON files under `.ark_angel/cases` by default
 (override with `--data-dir`).
+
+## Reviewing leads
+
+`enrich` rebuilds the analysis leads every time it runs. Review decisions live in
+their own append-only log on the case, so they survive that. The log is also
+the audit trail: who decided, when, why, and what evidence the lead had then.
+
+- **Numbers come from score order**, so verifying or dismissing a lead never
+  renumbers the others. They only shift when new evidence changes the scores.
+- **Dismissals aren't final.** If evidence the lead didn't have at dismissal
+  time joins it, the lead goes back to the open list marked RESURFACED, with
+  the new items listed. A verified lead stays verified but also shows what's new.
+- **Location clusters drift.** A cluster's id follows its centre, which moves
+  as evidence arrives. A review of a cluster that no longer exists carries over
+  to the current cluster sharing the most evidence with it.
+
+Set `ARK_ANGEL_REVIEWER` (or pass `--by`) to record who made each call.
 
 ## Place lookups and privacy
 
