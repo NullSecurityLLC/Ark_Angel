@@ -32,7 +32,7 @@ There is no AI model in the loop. Every lead comes from pattern matching you can
 - **Timeline**: every dated item, in order, with the most recent activity flagged.
 - **Lead review**: verify or dismiss leads, with a note on why. Every decision is kept as an audit trail. A dismissed lead comes back by itself, flagged as resurfaced, when new evidence joins it.
 - **Username lookup**: check a handle against public platforms (opt-in, network required). Hits are labelled unverified.
-- **Reports**: terminal, Markdown, JSON, or a self-contained HTML case file that opens offline.
+- **Reports**: terminal, Markdown, JSON, or a self-contained HTML case file that opens offline. The HTML numbers every piece of evidence as a court-style exhibit (EX-001, EX-002...), opens with the latest dated activity, shows a timeline strip, and prints cleanly on white paper (or "Print / save as PDF") for handing to partners. Terminal output uses one amber accent and respects `NO_COLOR` / `--no-color`.
 
 ---
 

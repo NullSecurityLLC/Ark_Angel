@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import math
+import re
+from datetime import datetime, timedelta
 from html import escape
 from typing import Any, Optional
 
@@ -91,6 +93,42 @@ h3:first-child{margin-top:0}
 .review.resurfaced{border-left-style:dashed}
 .leads.verified .rank{color:var(--accent)}
 .dim{color:var(--muted);font:12px/1.5 var(--mono)}
+.ex{font-family:var(--mono);color:var(--accent);border-bottom:1px dotted var(--accent);cursor:help}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.print-btn{font:600 12px/1 var(--mono);letter-spacing:.06em;color:var(--accent);background:transparent;
+  border:1px solid var(--accent);border-radius:3px;padding:8px 12px;cursor:pointer}
+.print-btn:hover{background:var(--accent-soft)}
+.tiles{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);gap:12px;margin-top:26px}
+@media (max-width:820px){.tiles{grid-template-columns:1fr}}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:14px 16px}
+.tile .value{font:600 20px/1.25 var(--mono);color:var(--text);margin:8px 0 4px}
+.tile .value small{font-size:13px;color:var(--muted);font-weight:400}
+.tile p{margin:0;font-size:13.5px;color:var(--muted);overflow-wrap:anywhere}
+.strip{margin:0 0 18px;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:6px 6px 0}
+.strip svg{display:block;width:100%;height:auto}
+.strip text{font:10px var(--mono);fill:var(--muted)}
+.strip .axis{stroke:var(--line)}
+.strip .tick{stroke:var(--line)}
+.strip .ev{fill:var(--dot)}
+.strip .ev.hot{fill:var(--accent)}
+.exhibits td:first-child{font-family:var(--mono);color:var(--accent);white-space:nowrap}
+.exhibits td.when{font-family:var(--mono);white-space:nowrap;color:var(--muted)}
+.exhibits td.content{overflow-wrap:anywhere}
+@media print{
+  :root:root{--bg:#fff;--surface:#fff;--surface-2:#f1f1f1;--text:#111;--muted:#444;--line:rgba(0,0,0,.22);
+    --accent:#6b4500;--accent-soft:rgba(107,69,0,.08);--dot:#777}
+  @page{margin:16mm}
+  body{background:#fff;color:#111;font-size:11pt}
+  main{max-width:none;padding:0}
+  .print-btn,details>summary{display:none}
+  .lead,.tile,tr,.timeline li,.plot,.strip,.clusters li{break-inside:avoid}
+  h2,h3{break-after:avoid}
+  .split{grid-template-columns:1fr}
+  a{color:inherit;text-decoration:none}
+  .ex{border-bottom:none}
+  details::details-content{content-visibility:visible;display:block}
+  .table-wrap{overflow:visible}
+}
 .signals>summary{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
   padding:12px 0;border-bottom:1px solid var(--line)}
 .signals td{overflow-wrap:anywhere}
@@ -174,16 +212,38 @@ def _nice(value: float) -> float:
     return 10 * exp
 
 
-def _lead_card(lead: dict[str, Any], top: float, expanded: bool) -> str:
+class _Exhibits:
+    """Swaps evidence ids for exhibit numbers (EX-012) in escaped text, keeping the id as a tooltip."""
+
+    def __init__(self, labels: dict[str, str]) -> None:
+        self.labels = labels
+        ids = sorted(labels, key=len, reverse=True)
+        self.escaped = {_e(i): i for i in ids}
+        alternation = "|".join(re.escape(_e(i)) for i in ids)
+        self.pattern = re.compile(rf"(?<![\w:/@.-])({alternation})(?![\w/@-])") if ids else None
+
+    def tag(self, evidence_id: str) -> str:
+        label = self.labels.get(evidence_id)
+        if not label:
+            return _e(evidence_id)
+        return f'<span class="ex" title="{_e(evidence_id)}">{label}</span>'
+
+    def link(self, escaped_text: str) -> str:
+        if self.pattern is None:
+            return escaped_text
+        return self.pattern.sub(lambda m: self.tag(self.escaped[m.group(1)]), escaped_text)
+
+
+def _lead_card(lead: dict[str, Any], top: float, expanded: bool, ex: _Exhibits) -> str:
     width = max(lead["score"] / top * 100, 2)
-    reasons = "".join(f"<li>{_e(r)}</li>" for r in lead["reasons"])
-    chips = "".join(f'<span class="chip">{_e(eid)}</span>' for eid in lead["evidence_ids"][:8])
+    reasons = "".join(f"<li>{ex.link(_e(r))}</li>" for r in lead["reasons"])
+    chips = "".join(f'<span class="chip">{ex.tag(eid)}</span>' for eid in lead["evidence_ids"][:8])
     chips_html = f'<div class="chips">{chips}</div>' if chips else ""
     details = (f'<details{" open" if expanded else ""}><summary>why this ranks here</summary>'
                f'<ul class="reasons">{reasons}</ul></details>') if reasons else ""
     status = review_line(lead)
     kind = "resurfaced" if lead["resurfaced"] else lead["status"]
-    review_html = f'<p class="review {kind}">{_e(status)}</p>' if status else ""
+    review_html = f'<p class="review {kind}">{ex.link(_e(status))}</p>' if status else ""
     return (
         f'<li class="lead"><div class="rank">#{lead["rank"]}</div>'
         f'<div class="lead-head"><span class="summary">{_e(lead["summary"])}</span>'
@@ -198,7 +258,7 @@ def _rows_table(title: str, rows: list[str]) -> str:
             '<div class="table-wrap"><table><tbody>' + "".join(rows) + "</tbody></table></div></details>")
 
 
-def _leads_html(leads: list[dict[str, Any]]) -> str:
+def _leads_html(leads: list[dict[str, Any]], ex: _Exhibits) -> str:
     """Verified leads first, then open cross-source leads, then collapsed signals and dismissals."""
     top = max((lead["score"] for lead in leads), default=0) or 1
     verified = [lead for lead in leads if lead["status"] == "verified"]
@@ -210,11 +270,11 @@ def _leads_html(leads: list[dict[str, Any]]) -> str:
     parts = []
     if verified:
         parts.append('<h3>Verified</h3><ol class="leads verified">'
-                     + "".join(_lead_card(lead, top, expanded=False) for lead in verified) + "</ol>")
+                     + "".join(_lead_card(lead, top, False, ex) for lead in verified) + "</ol>")
         parts.append("<h3>Open</h3>")
     if correlated:
         parts.append('<ol class="leads">'
-                     + "".join(_lead_card(lead, top, expanded=i < 3) for i, lead in enumerate(correlated)) + "</ol>")
+                     + "".join(_lead_card(lead, top, i < 3, ex) for i, lead in enumerate(correlated)) + "</ol>")
     else:
         parts.append('<p class="empty">No open cross-source leads. Run enrich after adding evidence.</p>')
     if signals:
@@ -224,8 +284,106 @@ def _leads_html(leads: list[dict[str, Any]]) -> str:
     if dismissed:
         parts.append(_rows_table("Dismissed", [
             f'<tr><td class="score-cell">#{lead["rank"]}</td><td>{_e(lead["summary"])}'
-            f'<br><span class="dim">{_e(review_line(lead))}</span></td></tr>' for lead in dismissed]))
+            f'<br><span class="dim">{ex.link(_e(review_line(lead)))}</span></td></tr>' for lead in dismissed]))
     return "".join(parts)
+
+
+def _parse_when(value: str) -> Optional[datetime]:
+    try:
+        return datetime.strptime(value[:16], "%Y-%m-%d %H:%M")
+    except ValueError:
+        return None
+
+
+def _tiles(report: dict[str, Any], ex: _Exhibits) -> str:
+    leads, case, timeline = report["leads"], report["case"], report["timeline"]
+    counts = {status: sum(1 for lead in leads if lead["status"] == status) for status in ("open", "verified", "dismissed")}
+    correlated = sum(1 for lead in leads if lead["correlated"] and lead["status"] == "open")
+    if timeline:
+        latest = timeline[-1]
+        when = _parse_when(latest["when"])
+        generated = _parse_when(report["generated"]["at"].replace("T", " "))
+        ago = ""
+        if when and generated:
+            days = (generated - when).days
+            ago = f" <small>{days} day{'s' if days != 1 else ''} before this report</small>" if days >= 0 else ""
+        latest_html = (f'<div class="value">{_e(latest["when"])}{ago}</div>'
+                       f'<p>{ex.tag(latest["evidence_id"])} · {_e(latest["source"])}: {_e(latest["text"])}</p>')
+    else:
+        latest_html = '<div class="value">none</div><p>No dated evidence yet.</p>'
+    return (
+        '<div class="tiles">'
+        f'<div class="tile"><div class="label">Latest dated activity</div>{latest_html}</div>'
+        f'<div class="tile"><div class="label">Leads</div><div class="value">{correlated} open</div>'
+        f'<p>cross-source · {counts["verified"]} verified · {counts["dismissed"]} dismissed · '
+        f'{counts["open"] - correlated} single-source signals</p></div>'
+        f'<div class="tile"><div class="label">Evidence</div><div class="value">{case["evidence_count"]} items</div>'
+        f'<p>{len(case["sources"])} sources: {_e(", ".join(case["sources"]))}</p></div>'
+        "</div>"
+    )
+
+
+def _timeline_strip(report: dict[str, Any], hot_ids: set[str], ex: _Exhibits) -> str:
+    """Every dated item on one time axis; items behind verified or top leads in amber."""
+    events = [(when, ev) for ev in report["timeline"] if (when := _parse_when(ev["when"]))]
+    if len(events) < 2:
+        return ""
+    width, height, margin = 1000, 96, 24
+    start, end = events[0][0], events[-1][0]
+    span = max((end - start).total_seconds(), 3600)
+
+    def x(when: datetime) -> float:
+        return margin + (when - start).total_seconds() / span * (width - 2 * margin)
+
+    parts = [f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="Timeline of dated evidence">',
+             f'<line class="axis" x1="{margin}" y1="64" x2="{width - margin}" y2="64"/>']
+    days = (end.date() - start.date()).days
+    step = 1 if days <= 14 else 2 if days <= 35 else 7
+    day = datetime.combine(start.date(), datetime.min.time()) + timedelta(days=1)
+    while day <= end:
+        if (day.date() - start.date()).days % step == 0:
+            parts.append(f'<line class="tick" x1="{x(day):.1f}" y1="58" x2="{x(day):.1f}" y2="70"/>'
+                         f'<text x="{x(day):.1f}" y="86" text-anchor="middle">{day:%b %d}</text>')
+        day += timedelta(days=1)
+    lanes: list[float] = []  # last x used in each lane, so close events stack instead of overlapping
+    for when, ev in events:
+        px = x(when)
+        lane = next((i for i, last in enumerate(lanes) if px - last > 10), None)
+        if lane is None:
+            lanes.append(px)
+            lane = len(lanes) - 1
+        lanes[lane] = px
+        hot = " hot" if ev["evidence_id"] in hot_ids else ""
+        label = ex.labels.get(ev["evidence_id"], ev["evidence_id"])
+        parts.append(f'<circle class="ev{hot}" cx="{px:.1f}" cy="{64 - 11 * lane:.1f}" r="4.5">'
+                     f'<title>{_e(ev["when"])} · {_e(label)} · {_e(ev["source"])}: {_e(ev["text"])}</title></circle>')
+    parts.append("</svg>")
+    return f'<div class="strip">{"".join(parts)}</div>'
+
+
+def _exhibits_table(report: dict[str, Any]) -> str:
+    rows = "".join(
+        f'<tr><td>{item["exhibit"]}</td><td class="when">{_e(item["timestamp"][:16])}</td>'
+        f'<td>{_e(item["source"])}</td><td>{_e(item["type"])}</td>'
+        f'<td class="content" title="{_e(item["identifier"])}">{_e(item["content"])}</td></tr>'
+        for item in report["evidence"]
+    )
+    if not rows:
+        return '<p class="empty">No evidence yet.</p>'
+    return ('<div class="table-wrap"><table class="exhibits"><thead><tr><th>Exhibit</th><th>Time</th><th>Source</th>'
+            "<th>Type</th><th>Content</th></tr></thead><tbody>" + rows + "</tbody></table></div>")
+
+
+_FOOTER = "Leads point at where a human should look next. They are not findings. Verify everything before acting on it."
+
+_PRINT_SCRIPT = (
+    "<script>"
+    "addEventListener('beforeprint',function(){document.querySelectorAll('details').forEach(function(d){"
+    "d.dataset.wasOpen=d.open;d.open=true;});});"
+    "addEventListener('afterprint',function(){document.querySelectorAll('details').forEach(function(d){"
+    "d.open=d.dataset.wasOpen==='true';});});"
+    "</script>"
+)
 
 
 def render_html(report: dict[str, Any], notice: Optional[str] = None) -> str:
@@ -243,20 +401,28 @@ def render_html(report: dict[str, Any], notice: Optional[str] = None) -> str:
             f'<a href="{osm}" target="_blank" rel="noopener">map</a></li>'
         )
 
+    ex = _Exhibits(report.get("exhibits", {}))
     timeline_items = "".join(
-        f'<li><time>{_e(ev["when"])}</time><span><span class="src">{_e(ev["source"])}</span>{_e(ev["text"])}</span></li>'
+        f'<li><time>{_e(ev["when"])}</time><span>{ex.tag(ev["evidence_id"])} '
+        f'<span class="src">{_e(ev["source"])}</span>{_e(ev["text"])}</span></li>'
         for ev in report["timeline"]
     ) or '<li class="empty">No dated evidence yet.</li>'
 
     entity_rows = "".join(
         f'<tr class="{"multi" if len(ent["mentions"]) > 1 else ""}"><td>{_e(ent["kind"])}</td>'
         f'<td><code>{_e(ent["value"])}</code></td><td class="count">{len(ent["mentions"])}</td>'
-        f'<td>{_e(", ".join(m["evidence_id"] for m in ent["mentions"]))}</td></tr>'
+        f'<td>{", ".join(ex.tag(m["evidence_id"]) for m in ent["mentions"])}</td></tr>'
         for ent in report["entities"]
     )
 
+    hot_ids = {eid for lead in leads if lead["status"] == "verified" for eid in lead["evidence_ids"]}
+    hot_ids |= {eid for lead in [x for x in leads if x["status"] == "open" and x["correlated"]][:3]
+                for eid in lead["evidence_ids"]}
     notice_html = f'<p class="notice">{_e(notice)}</p>' if notice else ""
-    leads_html = _leads_html(leads)
+    leads_html = _leads_html(leads, ex)
+    generated = report.get("generated", {})
+    generated_line = (f'Generated {_e(generated.get("at", "")[:16].replace("T", " "))} UTC by ArkAngel '
+                      f'{_e(generated.get("version", ""))}. ') if generated else ""
     if entity_rows:
         entities_html = ('<div class="table-wrap"><table><thead><tr><th>Kind</th><th>Value</th><th>Seen</th>'
                          "<th>Evidence</th></tr></thead><tbody>" + entity_rows + "</tbody></table></div>")
@@ -275,7 +441,8 @@ def render_html(report: dict[str, Any], notice: Optional[str] = None) -> str:
 <body>
 <main>
 <header>
-<div class="label">ArkAngel · case file {_e(case["identifier"])}</div>
+<div class="topbar"><div class="label">ArkAngel · case file {_e(case["identifier"])}</div>
+<button class="print-btn" type="button" onclick="window.print()">Print / save as PDF</button></div>
 <h1>{_e(case["title"])}</h1>
 <div class="meta">
 <span>opened <b>{opened}</b></span>
@@ -284,11 +451,17 @@ def render_html(report: dict[str, Any], notice: Optional[str] = None) -> str:
 <span><b>{len(leads)}</b> leads</span>
 </div>
 {notice_html}
+{_tiles(report, ex)}
 </header>
 
 <section>
 <h2>Cross-source leads</h2>
 {leads_html}
+</section>
+
+<section>
+<h2>Activity over time</h2>
+{_timeline_strip(report, hot_ids, ex) or '<p class="empty">Not enough dated evidence for a timeline.</p>'}
 </section>
 
 <section class="split">
@@ -308,8 +481,14 @@ def render_html(report: dict[str, Any], notice: Optional[str] = None) -> str:
 {entities_html}
 </section>
 
-<footer>Leads point at where a human should look next. They are not findings. Verify everything before acting on it.</footer>
+<section>
+<h2>Exhibits</h2>
+{_exhibits_table(report)}
+</section>
+
+<footer>{generated_line}{_FOOTER}</footer>
 </main>
+{_PRINT_SCRIPT}
 </body>
 </html>
 """

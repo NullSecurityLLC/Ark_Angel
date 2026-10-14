@@ -11,8 +11,8 @@ def test_demo_runs_offline_and_surfaces_planted_patterns(tmp_path: Path) -> None
 
     assert result.exit_code == 0, result.output
     lines = result.output.splitlines()
-    open_section = lines[lines.index("Top open leads") + 1:]
-    top = [line for line in open_section if line.strip()[:2] in {"1.", "2.", "3.", "4.", "5."}]
+    open_section = lines[lines.index("TOP OPEN LEADS") + 1:]
+    top = [line for line in open_section if line.startswith("  #")]  # lead rows; reasons are indented further
     assert "Location cluster around Union Station: 10 items" in top[0]
     assert "Handle rt_demo_owl appears in 7 items" in top[1]
     assert "Plate ABC1234 appears in 4 items" in top[2]
@@ -23,7 +23,7 @@ def test_demo_runs_offline_and_surfaces_planted_patterns(tmp_path: Path) -> None
     assert "imported  4 messages from the volunteers' WhatsApp export" in result.output
     assert "imported 1 email with 1 geotagged photo attachment" in result.output
     assert "resolved Boulder from the built-in US gazetteer: Boulder, CO (city" in result.output
-    verified = lines[lines.index("Verified") + 1]
+    verified = lines[lines.index("VERIFIED") + 1]
     assert "Phone 3035550147" in verified
     assert "RESURFACED: dismissed by Det. Demo (simulated)" in result.output
     assert "1 new item(s) since: late_tips.txt:1" in result.output

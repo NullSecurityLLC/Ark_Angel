@@ -1,4 +1,5 @@
 """Command-line interface for Ark Angel."""
+import os
 import sys
 from pathlib import Path
 
@@ -31,9 +32,14 @@ class _Group(click.Group):
     show_default=True,
     help="Directory where case data is stored.",
 )
+@click.option("--no-color", is_flag=True, help="Plain output (also honours the NO_COLOR environment variable).")
 @click.pass_context
-def cli(ctx: click.Context, data_dir: str) -> None:
+def cli(ctx: click.Context, data_dir: str, no_color: bool) -> None:
     """Base command group for Ark Angel."""
+    if no_color or os.environ.get("NO_COLOR"):
+        ctx.color = False
+    elif os.environ.get("FORCE_COLOR"):
+        ctx.color = True
     # Evidence can hold characters a Windows console can't show; print "?" rather than crash.
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -159,10 +165,12 @@ def report(store: FileCaseStore, case_id: str, fmt: str, out_path: str, top: int
     from ark_angel.report import build_report
     from ark_angel.report.html import render_html
     from ark_angel.report.text import render_json, render_markdown, render_text
+    from ark_angel.style import PLAIN, terminal_style
 
     data = build_report(store.get_case(case_id))
     renderers = {
-        "text": lambda: render_text(data, limit=top, show_dismissed=show_all),
+        "text": lambda: render_text(data, limit=top, show_dismissed=show_all,
+                                    style=PLAIN if out_path else terminal_style()),
         "md": lambda: render_markdown(data),
         "json": lambda: render_json(data),
         "html": lambda: render_html(data),
@@ -493,16 +501,22 @@ _STATUS_MARKS = {"verified": "verified", "open": "", "dismissed": "dismissed"}
 def lead_list(store: FileCaseStore, case_id: str, status: str) -> None:
     """List leads with their numbers and identifiers."""
     from ark_angel.review import lead_score, ranked_leads
+    from ark_angel.style import terminal_style
 
+    style = terminal_style()
+    items = ranked_leads(store.get_case(case_id))
+    top = max((lead_score(item.lead) for item in items), default=0.0)
     shown = 0
-    for item in ranked_leads(store.get_case(case_id)):
+    for item in items:
         state = item.state.status
         if (status is None and state == "dismissed") or (status not in (None, "all") and state != status):
             continue
         shown += 1
+        score = lead_score(item.lead)
         flag = "RESURFACED" if item.state.resurfaced else _STATUS_MARKS[state]
-        click.echo(f"#{item.rank:<3} [{lead_score(item.lead):5.1f}] {flag:<10} {item.lead.summary}")
-        click.echo(click.style(f"       {item.lead.identifier}", dim=True))
+        click.echo(f"{style.accent(f'#{item.rank:<4}')}{score:5.1f}  {style.bar(score, top)}  "
+                   f"{style.accent(f'{flag:<10}')} {style.strong(item.lead.summary)}")
+        click.echo(style.dim(f"{'':>34}{item.lead.identifier}"))
     if not shown:
         click.echo("No leads match. Run `ark-angel enrich` first?" if status is None else f"No {status} leads.")
 
@@ -591,32 +605,36 @@ def demo(store: FileCaseStore, out_path: str, case_id: str) -> None:
     from ark_angel.report import build_report
     from ark_angel.report.html import render_html
 
-    click.echo(click.style("ArkAngel demo: everything below is synthetic\n", bold=True))
+    from ark_angel.report.text import case_header, lead_lines, top_score
+    from ark_angel.style import terminal_style
+
+    style = terminal_style()
+    click.echo(style.heading("ArkAngel demo") + style.dim(f"  {style.dot} everything below is synthetic"))
+    click.echo(style.dim(style.rule * 60))
     workdir = store.data_dir.parent / "demo_inputs"
-    case = build_demo_case(store, workdir, case_id, log=click.echo)
+    case = build_demo_case(store, workdir, case_id, log=lambda line: click.echo(style.dim(line)))
     data = build_report(case)
 
-    from ark_angel.report.text import review_line
-
-    def show(lead: dict, label: str) -> None:
-        click.echo(f"  {label} [{lead['score']:>5.1f}] {lead['summary']}")
-        details = [review_line(lead)] if lead["review"] else []
-        for line in details + lead["reasons"][:2 - len(details)]:
-            click.echo(click.style(f"              {line}", dim=True))
-
+    click.echo("")
+    for line in case_header(data, style):
+        click.echo(line)
+    top = top_score(data)
     verified = [lead for lead in data["leads"] if lead["status"] == "verified"]
     open_leads = [lead for lead in data["leads"] if lead["status"] == "open"]
     if verified:
-        click.echo(click.style("\nVerified", bold=True))
+        click.echo("\n" + style.heading("Verified"))
         for lead in verified:
-            show(lead, f"#{lead['rank']:<2}")
-    click.echo(click.style("\nTop open leads", bold=True))
-    for position, lead in enumerate(open_leads[:5], start=1):
-        show(lead, f"{position}.")
+            for line in lead_lines(lead, top, style, reasons=1):
+                click.echo(line)
+    click.echo("\n" + style.heading("Top open leads"))
+    for lead in open_leads[:5]:
+        for line in lead_lines(lead, top, style, reasons=2):
+            click.echo(line)
 
     Path(out_path).write_text(render_html(data, notice=DEMO_NOTICE), encoding="utf-8")
-    click.echo(f"\nWrote HTML case file to {out_path}")
-    click.echo(f"Explore further: ark-angel lead list {case_id}   |   ark-angel report {case_id} --all")
+    click.echo("\n" + style.accent(f"Wrote HTML case file to {out_path}")
+               + style.dim(" (open it in a browser; prints cleanly)"))
+    click.echo(style.dim(f"Explore further: ark-angel lead list {case_id}   |   ark-angel report {case_id} --all"))
 
 
 if __name__ == "__main__":

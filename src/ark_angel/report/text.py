@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ark_angel.style import PLAIN, Style
+
 
 def review_line(lead: dict[str, Any]) -> str:
     """One line describing a lead's review state, or ``""`` if never reviewed."""
@@ -27,38 +29,69 @@ def _group(report: dict[str, Any], status: str) -> list[dict[str, Any]]:
     return [lead for lead in report["leads"] if lead["status"] == status]
 
 
-def render_text(report: dict[str, Any], limit: int | None = None, reasons: bool = True,
-                show_dismissed: bool = False) -> str:
+_ROW_INDENT = " " * 26  # lines under a lead row start under its summary
+
+
+def top_score(report: dict[str, Any]) -> float:
+    return max((lead["score"] for lead in report["leads"]), default=0.0)
+
+
+def lead_lines(lead: dict[str, Any], top: float, style: Style = PLAIN, reasons: int | None = None,
+               label: str | None = None) -> list[str]:
+    """One lead as an aligned row (number, score, bar, finding), its review state and its reasons."""
+    label = label or f"#{lead['rank']}"
+    lines = [f"  {style.accent(f'{label:<5}')}{lead['score']:5.1f}  {style.bar(lead['score'], top)}  "
+             f"{style.strong(lead['summary'])}"]
+    status = review_line(lead)
+    if status:
+        lines.append(_ROW_INDENT + (style.accent(status) if lead["resurfaced"] else status))
+    shown = lead["reasons"] if reasons is None else lead["reasons"][:reasons]
+    lines += [_ROW_INDENT + style.dim(style.fit(f"{style.gutter} {reason}", len(_ROW_INDENT))) for reason in shown]
+    return lines
+
+
+def case_header(report: dict[str, Any], style: Style = PLAIN) -> list[str]:
     case = report["case"]
-    lines = [
-        f"Case: {case['title']} ({case['identifier']})",
-        f"Opened: {case['created_at']}",
-        f"Evidence items: {case['evidence_count']} from {len(case['sources'])} source(s)",
+    dot = style.dot
+    opened = case["created_at"][:16].replace("T", " ")
+    return [
+        style.heading(f"ArkAngel {dot} case file {case['identifier']}"),
+        style.strong(case["title"]),
+        style.dim(f"opened {opened} {dot} {case['evidence_count']} evidence items {dot} "
+                  f"{len(case['sources'])} sources {dot} {case['lead_count']} leads"),
     ]
 
-    def emit(lead: dict[str, Any]) -> None:
-        lines.append(f"  #{lead['rank']:<3} [{lead['score']:.1f}] {lead['summary']}")
-        status = review_line(lead)
-        if status:
-            lines.append(f"         > {status}")
-        if reasons:
-            lines.extend(f"         - {reason}" for reason in lead["reasons"])
 
+def render_text(report: dict[str, Any], limit: int | None = None, reasons: bool = True,
+                show_dismissed: bool = False, style: Style = PLAIN) -> str:
+    """The case report for a terminal (pass ``terminal_style()``) or a plain file (default)."""
+    lines = case_header(report, style)
+    if report["timeline"]:
+        latest = report["timeline"][-1]
+        lines += ["", style.heading("Latest dated activity"),
+                  f"  {style.accent(latest['when'])}  {latest['source']}  {latest['text']}"]
+
+    top = top_score(report)
+    depth = None if reasons else 0
     verified, open_leads, dismissed = (_group(report, s) for s in ("verified", "open", "dismissed"))
     if verified:
-        lines.append("Verified:")
+        lines += ["", style.heading("Verified")]
         for lead in verified:
-            emit(lead)
-    lines.append("Leads:")
+            lines += lead_lines(lead, top, style, depth)
+    lines += ["", style.heading("Open leads")]
+    if not open_leads:
+        lines.append(style.dim("  none. Run `ark-angel enrich` after adding evidence."))
     for lead in open_leads[:limit]:
-        emit(lead)
+        lines += lead_lines(lead, top, style, depth)
+    if limit is not None and len(open_leads) > limit:
+        lines.append(style.dim(f"  … {len(open_leads) - limit} more (drop --top to see all)"))
     if dismissed:
         if show_dismissed:
-            lines.append("Dismissed:")
+            lines += ["", style.heading("Dismissed")]
             for lead in dismissed:
-                emit(lead)
+                lines += lead_lines(lead, top, style, depth)
         else:
-            lines.append(f"Dismissed: {len(dismissed)} hidden (--all to show)")
+            lines += ["", f"{style.heading('Dismissed')}  {len(dismissed)} hidden (--all to show)"]
     return "\n".join(lines)
 
 

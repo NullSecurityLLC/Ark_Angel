@@ -117,9 +117,9 @@ def test_reports_group_by_status() -> None:
     assert [lead["status"] for lead in report["leads"]] == ["verified", "open", "dismissed"]
 
     text = render_text(report)
-    assert text.index("Verified:") < text.index("lead corr-b") < text.index("Leads:")
+    assert text.index("VERIFIED") < text.index("lead corr-b") < text.index("OPEN LEADS")
     assert "RESURFACED" in text and "1 new item(s) since: 4" in text
-    assert "Dismissed: 1 hidden" in text and "lead corr-a" not in text
+    assert "DISMISSED  1 hidden" in text and "lead corr-a" not in text
     assert "lead corr-a" in render_text(report, show_dismissed=True)
 
     assert "## Verified" in render_markdown(report) and "## Dismissed" in render_markdown(report)

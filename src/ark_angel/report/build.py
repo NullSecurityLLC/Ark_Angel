@@ -1,9 +1,11 @@
 """Assemble a case into a plain-data report that every renderer shares."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Optional
 
-from ark_angel.analysis.correlate import CORRELATED_PREFIXES, analyze_case
+from ark_angel import __version__
+from ark_angel.analysis.correlate import CORRELATED_PREFIXES, analyze_case, source_of
 from ark_angel.models import Case, Review
 from ark_angel.review import RankedLead, lead_score, ranked_leads
 
@@ -35,10 +37,30 @@ def _lead_dict(item: RankedLead) -> dict[str, Any]:
     }
 
 
+def exhibit_labels(case: Case) -> dict[str, str]:
+    """Court-style exhibit numbers (EX-001, EX-002, ...) in the order evidence entered the case."""
+    width = max(3, len(str(len(case.evidence))))
+    return {item.identifier: f"EX-{n:0{width}d}" for n, item in enumerate(case.evidence, start=1)}
+
+
+def _excerpt(text: Any, limit: int = 400) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
 def build_report(case: Case) -> dict[str, Any]:
-    """Return leads in review order plus the entity index, geo clusters and timeline."""
+    """Return leads in review order plus the entity index, geo clusters, timeline and exhibits."""
     analysis = analyze_case(case.evidence, places=case.places)
+    exhibits = exhibit_labels(case)
     return {
+        "generated": {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "version": __version__},
+        "exhibits": exhibits,
+        "evidence": [
+            {"exhibit": exhibits[item.identifier], "identifier": item.identifier, "type": item.type,
+             "source": source_of(item), "timestamp": str((item.metadata or {}).get("timestamp", "")),
+             "content": _excerpt(item.content)}
+            for item in case.evidence
+        ],
         "case": {
             "identifier": case.identifier,
             "title": case.title,
