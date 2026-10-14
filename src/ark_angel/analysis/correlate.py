@@ -24,6 +24,8 @@ GEO_WEIGHT = 2.5
 SOURCE_DIVERSITY_BONUS = 2.0
 LATEST_ACTIVITY_SCORE = 2.0
 DEFAULT_CLUSTER_RADIUS_KM = 1.0
+# A mention of a big area says less than a mention of a town: (max radius in metres, weight, label).
+PLACE_SIZE_WEIGHTS = ((15_000, 2.0, "town-sized"), (75_000, 1.0, "county-sized"), (float("inf"), 0.5, "state-sized"))
 # Lead identifier prefixes produced by cross-source correlation.
 CORRELATED_PREFIXES = ("corr-", "geo-", "timeline-")
 
@@ -135,6 +137,14 @@ def cluster_points(points: Sequence[GeoPoint], radius_km: float = DEFAULT_CLUSTE
     return clusters
 
 
+def place_weight(radius_m: float) -> tuple[float, str]:
+    """Weight and size label for a coarse place of the given radius."""
+    for limit, weight, label in PLACE_SIZE_WEIGHTS:
+        if radius_m <= limit:
+            return weight, label
+    return PLACE_SIZE_WEIGHTS[-1][1], PLACE_SIZE_WEIGHTS[-1][2]
+
+
 def _excerpt(text: str, limit: int = 90) -> str:
     text = " ".join(str(text).split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
@@ -226,13 +236,15 @@ def analyze_case(evidence_items: Sequence[Evidence], radius_km: float = DEFAULT_
     clusters = cluster_points(points, radius_km)
 
     precise = {("place", p.name) for p in places if p.radius_m <= radius_km * 1000}
-    leads = (_entity_leads(entity_index, raw_forms, skip=precise) + _geo_leads(clusters)
+    radii = {p.name: p.radius_m for p in places}
+    leads = (_entity_leads(entity_index, raw_forms, skip=precise, place_radii=radii) + _geo_leads(clusters)
              + _timeline_leads(timeline))
     leads.sort(key=lambda lead: lead.score, reverse=True)
     return CaseAnalysis(leads=leads, entity_index=entity_index, clusters=clusters, points=points, timeline=timeline)
 
 
-def _entity_leads(entity_index: dict, raw_forms: dict, skip: frozenset | set = frozenset()) -> list[Lead]:
+def _entity_leads(entity_index: dict, raw_forms: dict, skip: frozenset | set = frozenset(),
+                  place_radii: Optional[dict[str, float]] = None) -> list[Lead]:
     leads = []
     for (kind, value), mentions in entity_index.items():
         # Precise places are scored through their geo cluster instead, so they aren't counted twice.
@@ -240,12 +252,18 @@ def _entity_leads(entity_index: dict, raw_forms: dict, skip: frozenset | set = f
             continue
         sources = sorted({m.source for m in mentions})
         weight = KIND_WEIGHTS.get(kind, 1.0)
+        size_note = ""
+        if kind == "place" and place_radii and value in place_radii:
+            weight, size = place_weight(place_radii[value])
+            size_note = f"{size} place (±{place_radii[value] / 1000:g} km), weight {weight:g}"
         score = weight * len(mentions) + SOURCE_DIVERSITY_BONUS * (len(sources) - 1)
         label = _KIND_LABELS.get(kind, kind.title())
         reasons = [
             f"{_plural(len(mentions), 'evidence item')} across {_plural(len(sources), 'source')} "
             f"({', '.join(sources)}): {weight:g} × {len(mentions)} + {SOURCE_DIVERSITY_BONUS:g} × {len(sources) - 1}"
         ]
+        if size_note:
+            reasons.append(size_note)
         forms = sorted(raw_forms.get((kind, value), set()))
         if len(forms) > 1:
             reasons.append(f"written {len(forms)} different ways: {' | '.join(forms)}")

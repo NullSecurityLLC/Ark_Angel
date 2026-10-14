@@ -27,7 +27,8 @@ end-to-end workflow.
 
 - [x] CSV/TSV tip-line exports (`ingest-csv`).
 - More ingestion adapters: email (.eml), chat exports.
-- Bundled offline gazetteer (e.g. GeoNames cities) so towns resolve without manual entry.
+- [x] Built-in offline US gazetteer (cities, counties, states) with `place resolve`.
+- Gazetteers for other countries; real county/state boundaries instead of radius estimates.
 - Time-window correlation: entities that co-occur within N hours.
 - Co-occurrence links: two entities that keep appearing in the same items.
 - Per-case scoring weights and an "ignore this entity" list (e.g. the tip line's own number).

@@ -27,6 +27,7 @@ There is no AI model in the loop. Every lead comes from pattern matching you can
 - **Cross-source correlation**: anything that shows up in more than one evidence item becomes a lead, and agreement across *different* sources (a tip and phone records and a social post) ranks higher than repetition within one.
 - **Geo clustering**: EXIF GPS from photos and coordinates dropped into tips are clustered by distance, so three sightings within a few hundred metres surface together.
 - **Place names**: each case has a gazetteer mapping names like "Union Station" or "the station" to coordinates. Tips that only *name* a spot join the same location cluster as the photos taken there. A vague "she's in Boulder" gets linked to any photo geotagged inside Boulder. `place suggest` lists the place names your evidence uses that the gazetteer doesn't cover yet.
+- **Built-in US gazetteer**: 21,454 cities and towns, 3,139 counties and all 50 states plus DC, offline. `place resolve` maps the unmatched names in your evidence to them, using state hints like "Boulder, CO" or the case's `--state`. It shows its picks before saving anything. Bigger places count for less: a state-sized match weighs a quarter of a town-sized one.
 - **Timeline**: every dated item, in order, with the most recent activity flagged.
 - **Lead review**: verify or dismiss leads, with a note on why. Every decision is kept as an audit trail. A dismissed lead comes back by itself, flagged as resurfaced, when new evidence joins it.
 - **Username lookup**: check a handle against public platforms (opt-in, network required). Hits are labelled unverified.
@@ -99,8 +100,11 @@ ark-angel ingest-image C1 photo.jpg
 
 # Map place names in the evidence to coordinates
 ark-angel place suggest C1                         # names the evidence uses that aren't resolved yet
-ark-angel place add C1 "Union Station" 39.7527 -104.9997 --alias "the station"
-ark-angel place add C1 Boulder 40.015 -105.2705 --radius-m 6000   # towns/cities: use a big radius
+ark-angel place resolve C1 --state CO              # match them to US cities/counties/states (preview)
+ark-angel place resolve C1 --state CO --apply      # save the ones that resolved unambiguously
+ark-angel place find Springfield --state IL        # search the built-in gazetteer
+ark-angel place add C1 Boulder --state CO          # a US city/county/state, no coordinates needed
+ark-angel place add C1 "Union Station" 39.7527 -104.9997 --alias "the station"   # landmarks: real coordinates
 ark-angel place import C1 places.csv              # name,latitude,longitude[,aliases][,radius_m]
 ark-angel place lookup C1 "Union Station, Denver" --online           # OpenStreetMap; add --pick N to save
 
@@ -145,6 +149,14 @@ Set `ARK_ANGEL_REVIEWER` (or pass `--by`) to record who made each call.
 
 ## Place lookups and privacy
 
+The built-in gazetteer is a resolver, not a matcher. It never scans evidence for
+its 25,000 names, because plenty of town names are also people's names (Riley,
+Kansas is a real town, and our demo's missing person is called Riley). It only resolves names that `place suggest` already found
+in location phrasing ("near X", "in X", "moved to X"). Resolved places go into
+the case gazetteer, where normal matching takes over. If a name exists in
+several states and nothing narrows it down, it stays unresolved and the
+candidates are listed for you to pick.
+
 Matching place names is offline. `place lookup --online` is the only command that
 touches the network, and it sends nothing but the query text you typed to
 OpenStreetMap's Nominatim. Results go into the gazetteer only when you `--pick`
@@ -160,6 +172,14 @@ them, re-run `enrich`, and see what moves.
 
 Scores order your attention. They are not conclusions. Verify everything before
 acting on it.
+
+## Data sources
+
+The built-in gazetteer uses [GeoNames](https://www.geonames.org/) city data
+(CC BY 4.0, via [geonamescache](https://pypi.org/project/geonamescache/)) and
+US Census Bureau 2010 county centres (public domain). Radii are estimates. See
+`src/ark_angel/geo/data/README.md` for details and `scripts/build_gazetteer.py`
+to rebuild it.
 
 ## Documentation
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from ark_angel.analysis.correlate import CaseAnalysis, analyze_case
+from ark_angel.geo.builtin import Resolution
 from ark_angel.analysis.rules import RuleBasedAnalyzer
 from ark_angel.cases.store import FileCaseStore
 from ark_angel.ingest.csv_source import CsvImport, CsvTipSource
@@ -136,3 +137,34 @@ def ingest_csv(store: FileCaseStore, case_id: str, path: str | Path, source: Csv
     if not dry_run:
         store.add_evidence(case_id, result.evidence)
     return result
+
+
+def resolve_unmatched_places(store: FileCaseStore, case_id: str, states: Iterable[str] = ()) -> list[Resolution]:
+    """Resolve the place names ``place suggest`` finds against the built-in US gazetteer.
+
+    State hints written next to a name in the evidence ("Boulder, CO") beat
+    ``states``, the case's region.
+    """
+    from ark_angel.analysis.places import suggest_places
+    from ark_angel.geo.builtin import normalize_states, resolve, state_hints
+
+    case = store.get_case(case_id)
+    region = normalize_states(states)
+    texts = {item.identifier: str(item.content) for item in case.evidence}
+    resolutions = []
+    for suggestion in suggest_places(case.evidence, case.places):
+        hints = state_hints(suggestion.name, (texts[eid] for eid in suggestion.evidence_ids))
+        resolutions.append(resolve(suggestion.name, hints, region))
+    return resolutions
+
+
+def place_from_builtin(name: str, states: Iterable[str] = ()) -> Place:
+    """A place for ``name`` from the built-in gazetteer; it must resolve unambiguously."""
+    from ark_angel.geo.builtin import normalize_states, resolve
+
+    resolution = resolve(name, default_states=normalize_states(states))
+    if resolution.status != "resolved":
+        options = "; ".join(entry.label for entry in resolution.candidates[:5])
+        hint = f" Candidates: {options}. Narrow it with --state." if options else ""
+        raise ValueError(f"can't place {name!r} from the built-in gazetteer: {resolution.why}.{hint}")
+    return resolution.entry.to_place(name)

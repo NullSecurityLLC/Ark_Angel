@@ -13,10 +13,14 @@ from typing import Iterable, Optional, Sequence
 
 from ark_angel.models import Evidence, Place
 
-# Capitalised phrase after a location preposition: "near Union Station", "in Boulder".
+# Capitalised phrase after a location preposition or a movement verb + "to":
+# "near Union Station", "in Boulder", "moved to Boulder County", "in St. Paul".
+# Bare "to" is left out on purpose: "talked to Sam" is not a place.
 _CANDIDATE_PATTERN = re.compile(
-    r"\b(?:at|near|in|by|outside|around|behind|under|from|toward|towards|across)\s+(?:the\s+)?"
-    r"((?:[A-Z][\w'’-]*)(?:[ \t]+(?:of[ \t]+|de[ \t]+|la[ \t]+)?[A-Z][\w'’-]*)*)"
+    r"\b(?:at|near|in|by|outside|around|behind|under|from|toward|towards|across|"
+    r"(?:moved|moving|went|going|drove|driving|headed|heading|traveled|travelled|flew|ran|returned|"
+    r"relocated|hitchhiked|walked|back)\s+to)\s+(?:the\s+)?"
+    r"((?:(?:St|Ste|Mt|Ft)\.[ \t]+)?[A-Z][\w'’-]*(?:[ \t]+(?:of[ \t]+|de[ \t]+|la[ \t]+)?[A-Z][\w'’-]*)*)"
 )
 _NOT_PLACES = {
     "January", "February", "March", "April", "May", "June", "July", "August", "September", "October",

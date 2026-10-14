@@ -30,8 +30,10 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
   - `places.py`: gazetteer matching (`PlaceMatcher`, longest name first,
     whole words) and `suggest_places` for place names that aren't resolved yet.
   - `rules.py`: per-item tagging ("phone present in tips:T-1003").
-- **geo/**: shared EXIF helpers (`exif.py`), `ExifGeoResolver`, and the opt-in
-  Nominatim lookup (`nominatim.py`), which is the only network call in place handling.
+- **geo/**: shared EXIF helpers (`exif.py`), `ExifGeoResolver`, the built-in US
+  gazetteer resolver (`builtin.py` + `data/us_gazetteer.csv.gz`, rebuilt by
+  `scripts/build_gazetteer.py`), and the opt-in Nominatim lookup
+  (`nominatim.py`), which is the only network call in place handling.
 - **cases/**: `FileCaseStore`, one JSON file per case (evidence, leads, the
   case gazetteer and the review log) with validated IDs and upsert-by-identifier writes.
 - **report/**: `build.py` assembles a plain-data report that the text,
@@ -50,7 +52,9 @@ correlated entity:  kind_weight × evidence_items + 2 × (distinct_sources − 1
 location cluster:   2.5 × evidence_items + 2 × (distinct_sources − 1)
 ```
 
-Kind weights: phone, email and plate 3; handle 2.5; coarse place 2; URL 1.5.
+Kind weights: phone, email and plate 3; handle 2.5; URL 1.5. Coarse places
+weigh by size: town-sized (up to 15 km) 2, county-sized (up to 75 km) 1,
+state-sized 0.5.
 
 Places come in two sizes. A precise place (radius up to the 1 km cluster
 radius, e.g. a station) turns each mention into a geo point, so it joins

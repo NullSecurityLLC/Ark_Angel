@@ -84,7 +84,11 @@ def build_demo_case(store: FileCaseStore, workdir: Path, case_id: str = DEMO_CAS
     gazetteer = workdir / "places.csv"
     gazetteer.write_text(_data_text("places.csv"))
     places = pipeline.add_places(store, case_id, pipeline.read_places_csv(gazetteer))
-    log(f"  resolved them from the demo gazetteer ({len(places)} places)")
+    log(f"  added {len(places)} landmarks from the case gazetteer: {', '.join(p.name for p in places)}")
+    resolved = [r for r in pipeline.resolve_unmatched_places(store, case_id, ["CO"]) if r.status == "resolved"]
+    pipeline.add_places(store, case_id, [r.entry.to_place(r.name) for r in resolved])
+    for r in resolved:
+        log(f"  resolved {r.name} from the built-in US gazetteer: {r.entry.label}")
 
     leads, analysis = pipeline.enrich(store, case_id)
     correlated = sum(1 for lead in leads if not lead.identifier.startswith("tag-"))
