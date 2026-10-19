@@ -40,4 +40,4 @@ version = { attr = "ark_angel.__version__" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-ark_angel = ["demo_data/*", "geo/data/*"]
+ark_angel = ["demo_data/*", "geo/data/*", "report/*.png"]

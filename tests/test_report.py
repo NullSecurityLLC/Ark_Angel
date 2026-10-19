@@ -50,7 +50,9 @@ def test_html_is_escaped_and_self_contained() -> None:
     assert "<script>alert(1)</script>" not in page
     assert "Case &lt;One&gt;" in page
     assert "Single-source signals (1)" in page
-    assert "<link" not in page and "<script src" not in page and "@import" not in page  # opens offline
+    assert not re.search(r"<link[^>]+href=\"(?!data:)", page)  # only the embedded favicon
+    assert "<script src" not in page and "@import" not in page  # opens offline
+    assert '<link rel="icon" type="image/png" href="data:image/png;base64,' in page
     assert page.count("<script>") == 1  # only the inline print helper
 
 
