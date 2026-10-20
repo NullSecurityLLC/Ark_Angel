@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS cases (
     draft TEXT NOT NULL DEFAULT '{}',
     draft_photo TEXT NOT NULL DEFAULT '',
     draft_state TEXT NOT NULL DEFAULT 'draft' CHECK (draft_state IN ('draft', 'requested', 'rejected')),
+    draft_version INTEGER NOT NULL DEFAULT 0,
     review_note TEXT NOT NULL DEFAULT '',
     published TEXT,
     published_photo TEXT NOT NULL DEFAULT '',
@@ -124,6 +125,10 @@ _FAILURE_SQL = {
 }
 _SESSION_SQL = ("SELECT s.*, u.username, u.role, u.status FROM sessions s JOIN users u ON u.id = s.user_id "
                 "WHERE s.token_hash = ?")
+
+
+class DraftChanged(Exception):
+    """An approval for a draft version that is no longer the current request."""
 
 
 class AuthError(Exception):
@@ -197,6 +202,9 @@ class SiteDB:
             os.close(os.open(self.path, os.O_CREAT | os.O_WRONLY, 0o600))
         with self._connect() as db:
             db.executescript(_SCHEMA)
+            columns = {row[1] for row in db.execute("PRAGMA table_info(cases)")}
+            if "draft_version" not in columns:  # databases made before approvals were version-bound
+                db.execute("ALTER TABLE cases ADD COLUMN draft_version INTEGER NOT NULL DEFAULT 0")
             db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('secret', ?)", (secrets.token_hex(32),))
             self._secret = db.execute("SELECT value FROM settings WHERE key = 'secret'").fetchone()[0].encode()
 
@@ -494,11 +502,15 @@ class SiteDB:
         return data
 
     def save_draft(self, case_id: str, profile: dict[str, Any], photo: Optional[str] = None) -> None:
-        """Save the owner's draft. A pending request keeps pending with the new draft; a rejection resets."""
+        """Save the owner's draft as a new version. Saving withdraws any pending request.
+
+        Each save bumps ``draft_version``; approval names the version the admin
+        reviewed, so a draft edited while an admin is looking at it can't go live
+        unseen (see :meth:`approve_publication`).
+        """
         with self._connect() as db:
-            db.execute("UPDATE cases SET draft = ?, draft_photo = COALESCE(?, draft_photo), "
-                       "draft_state = CASE draft_state WHEN 'rejected' THEN 'draft' ELSE draft_state END "
-                       "WHERE case_id = ?", (json.dumps(profile), photo, case_id))
+            db.execute("UPDATE cases SET draft = ?, draft_photo = COALESCE(?, draft_photo), draft_state = 'draft', "
+                       "draft_version = draft_version + 1 WHERE case_id = ?", (json.dumps(profile), photo, case_id))
 
     def request_publication(self, case_id: str) -> None:
         with self._connect() as db:
@@ -517,20 +529,29 @@ class SiteDB:
                               "ORDER BY c.created_at").fetchall()
         return [{**self._case_dict(row), "owner": row["owner"]} for row in rows]
 
-    def approve_publication(self, case_id: str) -> str:
-        """Make the draft the public version. Returns the profile's public slug."""
+    def approve_publication(self, case_id: str, version: int) -> str:
+        """Make draft ``version`` the public version. Returns the profile's public slug.
+
+        Raises:
+            DraftChanged: the draft is no longer ``version`` (edited since the admin looked) or isn't requested.
+            ValueError: the draft lacks a name, police report or attestation.
+        """
         with self._connect() as db:
             row = db.execute("SELECT * FROM cases WHERE case_id = ? AND draft_state = 'requested'",
                              (case_id,)).fetchone()
-            if row is None:
-                raise ValueError("no publication request for that case")
-            slug = row["slug"]
-            if not slug:
-                base = _slugify(_profile(row["draft"]).get("name", ""))
-                slug = f"{base}-{secrets.token_hex(3)}"
-            db.execute("UPDATE cases SET published = draft, published_photo = draft_photo, published_at = ?, "
-                       "draft_state = 'draft', review_note = '', slug = ? WHERE case_id = ?",
-                       (self.clock(), slug, case_id))
+            if row is None or row["draft_version"] != version:
+                raise DraftChanged("this profile changed after you opened it, or its request was withdrawn")
+            draft = _profile(row["draft"])
+            if not (draft.get("name") and draft.get("police_report") and draft.get("attest")):
+                raise ValueError("a profile needs a name, a police report and the owner's attestation")
+            slug = row["slug"] or f"{_slugify(draft['name'])}-{secrets.token_hex(3)}"
+            # The version is checked again in the UPDATE, so an edit landing between the read and the write loses.
+            cur = db.execute("UPDATE cases SET published = draft, published_photo = draft_photo, published_at = ?, "
+                             "draft_state = 'draft', review_note = '', slug = ? "
+                             "WHERE case_id = ? AND draft_state = 'requested' AND draft_version = ?",
+                             (self.clock(), slug, case_id, version))
+            if cur.rowcount != 1:
+                raise DraftChanged("this profile changed after you opened it")
         return slug
 
     def reject_publication(self, case_id: str, note: str) -> None:

@@ -8,6 +8,7 @@ from __future__ import annotations
 from flask import Blueprint, abort, g, redirect, render_template, request, send_from_directory, url_for
 
 from ark_angel.web.app import site
+from ark_angel.web.db import DraftChanged
 
 bp = Blueprint("admin", __name__)
 
@@ -63,10 +64,11 @@ def publications():
                            error="")
 
 
-@bp.get("/publications/<case_id>/photo")
-def publication_photo(case_id: str):
+@bp.get("/publications/<case_id>/photo/<int:version>")
+def publication_photo(case_id: str, version: int):
+    """The photo of exactly the draft version under review: a photo swapped since shows as missing, not new."""
     meta = site().db.case(case_id)
-    if meta is None or not meta["draft_photo"]:
+    if meta is None or not meta["draft_photo"] or meta["draft_version"] != version:
         abort(404)
     return send_from_directory(site().media_dir, meta["draft_photo"], mimetype="image/jpeg")
 
@@ -77,8 +79,17 @@ def decide_publication(case_id: str):
     decision = request.form.get("decision")
     try:
         if decision == "approve":
+            try:
+                version = int(request.form.get("version", ""))
+            except ValueError:
+                abort(400)
             old = (db.case(case_id) or {}).get("published_photo", "")
-            db.approve_publication(case_id)
+            try:
+                db.approve_publication(case_id, version)
+            except DraftChanged:
+                return render_template("admin/publications.html", requests=db.publication_requests(), notice="",
+                                       error="That profile changed after you opened it, so nothing was published. "
+                                             "Review the current version below."), 409
             if old and db.photo_in_use(old) is None:
                 site().remove_photo(old)
         elif decision == "reject":

@@ -189,7 +189,11 @@ def test_profile_goes_public_only_after_approval(site, tmp_path: Path) -> None:
     assert "Riley Tamsin" in site.admin().get("/admin/publications").get_data(as_text=True)
 
     admin = site.admin()
-    post(admin, f"/admin/publications/{case_id}", {"decision": "approve"}, form_page="/admin/publications")
+    assert post(admin, f"/admin/publications/{case_id}", {"decision": "approve"},
+                form_page="/admin/publications").status_code == 400  # approval must name the version reviewed
+    post(admin, f"/admin/publications/{case_id}", {"decision": "approve",
+                                                   "version": str(site.db.case(case_id)["draft_version"])},
+         form_page="/admin/publications")
     slug = site.db.case(case_id)["slug"]
     assert slug.startswith("riley-tamsin-")
     assert "Riley Tamsin" in anon.get("/").get_data(as_text=True)
@@ -214,6 +218,46 @@ def test_edits_to_a_live_profile_wait_for_review(site) -> None:
          form_page="/admin/publications")
     assert "Name doesn&#39;t match the report" in owner.get(page).get_data(as_text=True)
     assert "Riley Tamsin" in site.client().get(f"/missing/{slug}").get_data(as_text=True)
+
+
+def test_admin_approves_exactly_the_version_they_reviewed(site, tmp_path: Path) -> None:
+    """The swap attack from the security review: request something benign, edit it while the admin is looking."""
+    import re
+
+    owner = site.member("owner")
+    case_id = new_case(owner)
+    page = f"/app/cases/{case_id}/profile"
+    post(owner, page, {"action": "request", "name": "Benign Person", "police_report": "PD 26-1234", "attest": "yes"},
+         form_page=page, files={"photo": (photo(tmp_path / "a.jpg"), "a.jpg")})
+    admin = site.admin()
+    review = admin.get("/admin/publications").get_data(as_text=True)  # the admin opens the queue...
+    seen = re.search(r'name="version" value="(\d+)"', review).group(1)
+    photo_url = re.search(r'src="(/admin/publications/[^"]+/photo/\d+)"', review).group(1)
+    assert admin.get(photo_url).status_code == 200
+
+    # ...and while they check the police report, the owner swaps everything and asks again.
+    post(owner, page, {"action": "save", "name": "Target Victim", "description": "Last seen at 123 Shelter Rd"},
+         form_page=page, files={"photo": (photo(tmp_path / "b.jpg", 40.0, -105.0), "b.jpg")})
+    assert site.db.case(case_id)["draft_state"] == "draft"  # saving withdrew the request
+    post(owner, page, {"action": "request", "name": "Target Victim", "police_report": "PD 26-1234", "attest": "yes",
+                       "description": "Last seen at 123 Shelter Rd"}, form_page=page)
+    assert admin.get(photo_url).status_code == 404  # the photo the admin is looking at no longer stands for the draft
+
+    stale = post(admin, f"/admin/publications/{case_id}", {"decision": "approve", "version": seen},
+                 form_page="/admin/publications")
+    assert stale.status_code == 409 and "changed after you opened it" in stale.get_data(as_text=True)
+    assert site.db.case(case_id)["published"] is None
+    assert "Target Victim" not in site.client().get("/").get_data(as_text=True)
+
+
+def test_approval_rechecks_the_requirements(site) -> None:
+    owner = site.member("owner")
+    case_id = new_case(owner)
+    site.db.save_draft(case_id, {"name": "No Report"})
+    site.db.request_publication(case_id)  # e.g. a request crafted around the form checks
+    with pytest.raises(ValueError, match="police report"):
+        site.db.approve_publication(case_id, site.db.case(case_id)["draft_version"])
+    assert site.db.case(case_id)["published"] is None
 
 
 def test_unpublish_is_immediate(site) -> None:

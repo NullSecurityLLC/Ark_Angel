@@ -93,7 +93,7 @@ def publish(site: Site, owner, case_id: str, name: str = "Riley Tamsin", image: 
                  "police_report": "Denver PD 26-1234", "attest": "yes"},
                 form_page=f"/app/cases/{case_id}/profile", files=files)
     assert resp.status_code == 302, resp.get_data(as_text=True)
-    return site.db.approve_publication(case_id)
+    return site.db.approve_publication(case_id, site.db.case(case_id)["draft_version"])
 
 
 @pytest.fixture

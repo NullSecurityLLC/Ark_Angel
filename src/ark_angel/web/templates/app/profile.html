@@ -12,7 +12,7 @@
   <p><span class="tag">private</span> Not public.</p>
   {% endif %}
   {% if meta.draft_state == 'requested' %}
-  <p><span class="tag">in review</span> Your latest version is waiting for an administrator.{% if meta.published %} Visitors still see the approved version until then.{% endif %}</p>
+  <p><span class="tag">in review</span> Your latest version is waiting for an administrator.{% if meta.published %} Visitors still see the approved version until then.{% endif %} Saving any change withdraws the request; send it again when you're done.</p>
   {% elif meta.draft_state == 'rejected' %}
   <p class="alert">Sent back by an administrator: {{ meta.review_note }}</p>
   {% endif %}
