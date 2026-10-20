@@ -843,12 +843,15 @@ def web_backup(obj, dest: str) -> None:
     import sqlite3
     import tarfile
     import tempfile
+    from contextlib import closing
 
     store, db = obj
     base = store.data_dir.parent
     with tempfile.TemporaryDirectory() as tmp:
         snapshot = Path(tmp) / db.path.name
-        with sqlite3.connect(db.path) as live, sqlite3.connect(snapshot) as copy:
+        # closing(), not a bare `with`: sqlite3's own context manager only commits, and Windows can't delete the
+        # snapshot while a connection still holds it open.
+        with closing(sqlite3.connect(db.path)) as live, closing(sqlite3.connect(snapshot)) as copy:
             live.backup(copy)  # consistent even while the site is writing
         # Owner-only from the first byte: the archive holds tippers' contact details.
         fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
