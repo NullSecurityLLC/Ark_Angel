@@ -84,6 +84,8 @@ def build_report(case: Case) -> dict[str, Any]:
         ],
         "clusters": [
             {
+                # Same identifier correlate gives the cluster's lead, so maps can show its rank and review.
+                "lead_id": f"geo-{cluster.latitude:.5f},{cluster.longitude:.5f}",
                 "latitude": round(cluster.latitude, 6),
                 "longitude": round(cluster.longitude, 6),
                 "radius_m": round(cluster.radius_km * 1000),

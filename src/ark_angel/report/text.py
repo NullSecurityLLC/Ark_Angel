@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ark_angel.report.gis import google_maps_url, street_view_url
 from ark_angel.style import PLAIN, Style
 
 
@@ -116,9 +117,11 @@ def render_markdown(report: dict[str, Any]) -> str:
             out += [f"   - {reason}" for reason in lead["reasons"]]
         out.append("")
     if report["clusters"]:
-        out += ["", "## Location clusters", "", "| Centre | Items | Spread |", "|---|---|---|"]
+        out += ["", "## Location clusters", "", "| Centre | Items | Spread | Map |", "|---|---|---|---|"]
         for c in report["clusters"]:
-            out.append(f"| {c['latitude']:.5f}, {c['longitude']:.5f} | {len(c['points'])} | {c['radius_m']} m |")
+            lat, lon = c["latitude"], c["longitude"]
+            out.append(f"| {lat:.5f}, {lon:.5f} | {len(c['points'])} | {c['radius_m']} m | "
+                       f"[Google]({google_maps_url(lat, lon)}) · [Street View]({street_view_url(lat, lon)}) |")
     if report["timeline"]:
         out += ["", "## Timeline", ""]
         out += [f"- `{e['when']}` **{e['source']}**: {e['text']}" for e in report["timeline"]]
