@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Security{% endblock %}
+{% block body %}
+<div class="label">Account</div>
+<h1>Security</h1>
+
+<section>
+<h2>Your active sessions</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Signed in</th><th>Last seen</th><th>Address</th><th>Browser</th></tr></thead>
+<tbody>
+{% for s in sessions %}
+<tr{% if s.token_hash == current %} class="current"{% endif %}>
+  <td class="mono">{{ s.created_at|when }}{% if s.token_hash == current %} <span class="tag">this one</span>{% endif %}</td>
+  <td class="mono">{{ s.last_seen|when }}</td>
+  <td class="mono">{{ s.ip }}</td>
+  <td class="clip">{{ s.user_agent or "—" }}</td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+{% if sessions|length > 1 %}
+<form method="post" action="{{ url_for('sign_out_others') }}" class="actions">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit" class="btn">Sign out all other sessions</button>
+</form>
+{% endif %}
+<p class="fine">Sessions end after 30 minutes idle or 12 hours, whichever comes first. Changing your password (<code>ark-angel admin passwd</code>) ends all of them.</p>
+</section>
+
+<section>
+<h2>Sign-in activity</h2>
+{% if events %}
+<div class="table-wrap"><table>
+<thead><tr><th>When</th><th>Username</th><th>Outcome</th><th>Address</th><th>Browser</th></tr></thead>
+<tbody>
+{% for e in events %}
+<tr class="ev-{{ e.outcome }}">
+  <td class="mono">{{ e.at|when }}</td>
+  <td class="mono">{{ e.username }}</td>
+  <td><span class="tag">{{ e.outcome|replace("_", " ") }}</span></td>
+  <td class="mono">{{ e.ip }}</td>
+  <td class="clip">{{ e.user_agent or "—" }}</td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+<p class="fine">Five failed sign-ins for one username, or twenty from one address, lock it for 15 minutes. Kept for 90 days.</p>
+{% else %}
+<p class="empty">No sign-in activity yet.</p>
+{% endif %}
+</section>
+{% endblock %}

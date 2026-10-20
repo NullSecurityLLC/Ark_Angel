@@ -39,6 +39,9 @@ enough to ship in a short iteration without breaking the end-to-end workflow.
 
 - [x] Mark leads verified or dismissed with notes and an audit trail; dismissed
       leads resurface on new evidence.
+- [x] Admin panel: local, login-protected web view of cases with server-side sessions,
+      lockout and a sign-in log (`ark-angel admin`).
+- Panel roles (read-only reviewers vs. admins) and two-factor sign-in.
 - Free-form notes and tags on evidence items.
 - Provenance on every artifact (which tool, when, with what input).
 - Shareable exports (PDF) for partners and law enforcement.

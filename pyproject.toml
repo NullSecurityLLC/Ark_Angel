@@ -6,12 +6,13 @@ authors = [{ name = "Ark Angel Team" }]
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "click>=8.0",
-    "Pillow>=10.0",
+    "Pillow>=12.3",
     "piexif>=1.1",
-    "requests>=2.28",
+    "requests>=2.33",
+    "urllib3>=2.8",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -20,6 +21,12 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Topic :: Security",
+]
+
+[project.optional-dependencies]
+web = [
+    "Flask>=3.0",
+    "waitress>=3.0.1",
 ]
 
 [project.urls]
@@ -40,4 +47,4 @@ version = { attr = "ark_angel.__version__" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-ark_angel = ["demo_data/*", "geo/data/*", "report/*.png"]
+ark_angel = ["demo_data/*", "geo/data/*", "report/*.png", "admin/templates/*", "admin/static/*"]
