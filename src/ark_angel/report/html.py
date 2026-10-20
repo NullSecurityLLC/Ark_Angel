@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from html import escape
 from typing import Any, Optional
 
+from ark_angel.report.gis import google_maps_url, street_view_url
 from ark_angel.report.text import review_line
 
 
@@ -83,6 +84,7 @@ details[open] summary::before{content:"- ";}
 .clusters{margin:14px 0 0;padding:0;list-style:none;font:13px/1.5 var(--mono)}
 .clusters li{padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px}
 .clusters a{color:var(--accent)}
+.maplinks{display:flex;flex-direction:column;align-items:flex-end;gap:2px;white-space:nowrap}
 .timeline{list-style:none;margin:0;padding:0}
 .timeline li{display:grid;grid-template-columns:118px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);
   font-size:13.5px}
@@ -411,7 +413,10 @@ def render_html(report: dict[str, Any], notice: Optional[str] = None) -> str:
             f"<li><span>{_e(', '.join(c['places'])) + '<br>' if c['places'] else ''}"
             f"{c['latitude']:.5f}, {c['longitude']:.5f}<br>"
             f"<span class=label>{len(c['points'])} item(s) · {c['radius_m']} m spread</span></span>"
-            f'<a href="{osm}" target="_blank" rel="noopener">map</a></li>'
+            f'<span class="maplinks"><a href="{osm}" target="_blank" rel="noopener">osm</a>'
+            f'<a href="{_e(google_maps_url(c["latitude"], c["longitude"]))}" target="_blank" rel="noopener">google</a>'
+            f'<a href="{_e(street_view_url(c["latitude"], c["longitude"]))}" target="_blank" rel="noopener">'
+            "street view</a></span></li>"
         )
 
     ex = _Exhibits(report.get("exhibits", {}))

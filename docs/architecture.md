@@ -34,10 +34,13 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
   gazetteer resolver (`builtin.py` + `data/us_gazetteer.csv.gz`, rebuilt by
   `scripts/build_gazetteer.py`), and the opt-in Nominatim lookup
   (`nominatim.py`), which is the only network call in place handling.
+  `cameras.py` is the opt-in video canvass: it asks the Overpass API for OSM-mapped
+  surveillance devices around each location lead and ranks them by distance and direction.
 - **cases/**: `FileCaseStore`, one JSON file per case (evidence, leads, the
   case gazetteer and the review log) with validated IDs and upsert-by-identifier writes.
 - **report/**: `build.py` assembles a plain-data report that the text,
-  Markdown, JSON and self-contained HTML renderers share.
+  Markdown, JSON and self-contained HTML renderers share. `gis.py` renders the same
+  data as KML (Google Earth/My Maps) or GeoJSON, plus the canvass checklist CSV.
 - **review.py**: lead review. The append-only `Case.reviews` log is matched
   back onto freshly rebuilt leads, with score-ordered lead numbers, geo-cluster
   carry-over by evidence overlap, and dismissed leads resurfacing on new evidence.

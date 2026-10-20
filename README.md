@@ -31,6 +31,8 @@ There is no AI model in the loop. Every lead comes from pattern matching you can
 - **Geo clustering**: EXIF GPS from photos and coordinates dropped into tips are clustered by distance, so three sightings within a few hundred metres surface together.
 - **Place names**: each case has a gazetteer mapping names like "Union Station" or "the station" to coordinates. Tips that only *name* a spot join the same location cluster as the photos taken there. A vague "she's in Boulder" gets linked to any photo geotagged inside Boulder. `place suggest` lists the place names your evidence uses that the gazetteer doesn't cover yet.
 - **Built-in US gazetteer**: 21,454 cities and towns, 3,139 counties and all 50 states plus DC, offline. `place resolve` maps the unmatched names in your evidence to them, using state hints like "Boulder, CO" or the case's `--state`. It shows its picks before saving anything. Bigger places count for less: a state-sized match weighs a quarter of a town-sized one.
+- **Maps (GIS export)**: `ark-angel map` writes the case's location leads, evidence points and places as KML (Google Earth, Google My Maps) or GeoJSON (QGIS, ArcGIS, geojson.io), with lead rank, score and review status on every pin. Reports link each location cluster to Google Maps and Street View. No API key.
+- **Video canvass**: `ark-angel cameras` lists the surveillance cameras mapped in OpenStreetMap around each location lead (shop, street and traffic cameras, licence-plate readers), nearest first, with who runs them and whether they point at the spot. It's a list of places to ask for footage before it's overwritten. It never connects to a camera (opt-in, network required).
 - **Timeline**: every dated item, in order, with the most recent activity flagged.
 - **Lead review**: verify or dismiss leads, with a note on why. Every decision is kept as an audit trail. A dismissed lead comes back by itself, flagged as resurfaced, when new evidence joins it.
 - **Username lookup**: check a handle against public platforms (opt-in, network required). Hits are labelled unverified.
@@ -162,6 +164,12 @@ ark-angel lead dismiss C1 corr-phone-3035550147 --note "the tip line's own numbe
 ark-angel lead show C1 3        # evidence, reasons, review history
 ark-angel lead reopen C1 3
 
+# Maps and video canvass
+ark-angel map C1 --out C1.kml                      # Google Earth / Google My Maps (or .geojson for QGIS)
+ark-angel cameras C1                               # the spots it would search (offline)
+ark-angel cameras C1 --online --out canvass.csv    # mapped cameras near each location lead, as a checklist
+ark-angel cameras C1 --online --out C1-canvass.kml # or the whole case map plus a cameras layer
+
 # Results
 ark-angel report C1 --top 10    # verified first, then open; --all includes dismissed
 ark-angel report C1 --format html --out C1.html   # also: md, json
@@ -201,6 +209,38 @@ Matching place names is offline. `place lookup --online` is the only command tha
 touches the network, and it sends nothing but the query text you typed to
 OpenStreetMap's Nominatim. Results go into the gazetteer only when you `--pick`
 one. Nominatim asks for no more than about one request per second.
+
+## Maps and cameras
+
+**Google Maps, without an API key.** `ark-angel map C1 --out C1.kml` and import
+it into [Google My Maps](https://www.google.com/mymaps) (*Create a new map >
+Import*) for a map the whole team can open, or open it in Google Earth. Each
+location lead is a pin with its rank, score and review status plus a circle for
+its spread. Evidence points and gazetteer places get their own layers. GeoJSON
+(`--out C1.geojson`) does the same for QGIS, ArcGIS or geojson.io. The export
+is offline, but importing into an online map uploads it, and it carries evidence
+excerpts unless you pass `--no-content`.
+
+**Video canvass.** `ark-angel cameras C1 --online` searches OpenStreetMap for
+mapped surveillance devices (`man_made=surveillance`) within 300 m of each open
+or verified location lead (plus its spread), and around the latest geotagged
+evidence. For each camera it shows the distance, the operator if mapped, what it
+watches, and whether its mapped direction points at the spot. Licence-plate
+readers (ALPR) are flagged: their operator can search plate reads for a plate in
+the case, through the investigating agency. Footage is often overwritten within
+weeks, so ask for preservation first.
+
+What it is not: it never connects to, views or scans any camera, and it doesn't
+list "open" internet cameras. Those are mostly private cameras their owners
+never meant to publish, and watching them is the unauthorized surveillance this
+project rules out. Volunteers map OSM cameras, so coverage has gaps. Walk the
+area anyway.
+
+The query sends the search circles (centre and radius) to the Overpass API and
+nothing else, but those circles are the places your case cares about. Point
+`--endpoint` at a self-hosted Overpass if that matters. Narrow it with
+`--lead N` or add spots with `--at LAT,LON`. Map data © OpenStreetMap
+contributors (ODbL).
 
 ## How leads are scored
 

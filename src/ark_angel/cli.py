@@ -183,6 +183,141 @@ def report(store: FileCaseStore, case_id: str, fmt: str, out_path: str, top: int
         click.echo(output)
 
 
+_MAP_FORMATS = {".kml": "kml", ".geojson": "geojson", ".json": "geojson"}
+
+
+def _map_format(out_path: str, fmt: str) -> str:
+    fmt = fmt or _MAP_FORMATS.get(Path(out_path).suffix.lower(), "")
+    if not fmt:
+        raise click.ClickException("can't tell the format from the file name; use .kml or .geojson, or pass --format")
+    return fmt
+
+
+def _write_map(path: str, fmt: str, data: dict, canvass: list, include_content: bool) -> None:
+    from ark_angel.report.gis import render_geojson, render_kml
+
+    render = render_kml if fmt == "kml" else render_geojson
+    Path(path).write_text(render(data, canvass, include_content=include_content), encoding="utf-8")
+    click.echo(f"Wrote {fmt.upper()} map to {path}")
+    if fmt == "kml":
+        click.echo("  Google My Maps: Create a new map > Import. Google Earth: File > Open.")
+    else:
+        click.echo("  QGIS / ArcGIS: add as a vector layer. Quick look: drag it onto geojson.io.")
+    if include_content:
+        click.echo("  It includes evidence excerpts; importing into an online map uploads them. "
+                   "--no-content leaves them out.")
+
+
+_map_out = click.option("--format", "fmt", type=click.Choice(["kml", "geojson"]),
+                        help="Map format (default: from the --out extension).")
+_no_content = click.option("--no-content", is_flag=True,
+                           help="Leave evidence text out of the map (exhibit numbers and sources stay).")
+
+
+@cli.command("map")
+@click.argument("case_id")
+@click.option("--out", "out_path", required=True, type=click.Path(dir_okay=False),
+              help="File to write: .kml (Google Earth, Google My Maps) or .geojson (QGIS, ArcGIS).")
+@_map_out
+@_no_content
+@click.pass_obj
+def map_export(store: FileCaseStore, case_id: str, out_path: str, fmt: str, no_content: bool) -> None:
+    """Export a case's locations as a GIS layer: location leads, evidence points and places. Offline."""
+    from ark_angel.report import build_report
+
+    data = build_report(store.get_case(case_id))
+    if not data["clusters"] and not data["places"]:
+        raise click.ClickException("nothing to map yet: no geotagged evidence or places in this case")
+    _write_map(out_path, _map_format(out_path, fmt), data, [], not no_content)
+
+
+@cli.command("cameras")
+@click.argument("case_id")
+@click.option("--online", is_flag=True, help="Query OpenStreetMap (sends only the search circles to Overpass).")
+@click.option("--radius-m", type=float, default=300.0, show_default=True,
+              help="How far past each location lead's spread to look.")
+@click.option("--lead", "lead_refs", multiple=True,
+              help="Only canvass this location lead (number, id or prefix; repeatable).")
+@click.option("--at", "spots", multiple=True, metavar="LAT,LON", help="Also canvass this spot (repeatable).")
+@click.option("--out", "out_path", type=click.Path(dir_okay=False),
+              help="Save the canvass: .csv (a checklist for the team), or .kml/.geojson (the case map plus cameras).")
+@click.option("--endpoint", help="Overpass API URL, e.g. a self-hosted instance (default: overpass-api.de).")
+@_map_out
+@_no_content
+@click.pass_obj
+def cameras(store: FileCaseStore, case_id: str, online: bool, radius_m: float, lead_refs: tuple, spots: tuple,
+            out_path: str, endpoint: str, fmt: str, no_content: bool) -> None:
+    """Video canvass: mapped cameras near the case's location leads, nearest first.
+
+    Reads OpenStreetMap's public map of surveillance cameras (shop, street and
+    traffic cameras, plate readers). It never connects to a camera. The result
+    is a list of places to ask for footage. Volunteers map these, so coverage
+    has gaps: no camera listed does not mean no camera.
+    """
+    from ark_angel.geo import cameras as cams
+    from ark_angel.report import build_report
+    from ark_angel.report.gis import google_maps_url, render_canvass_csv, street_view_url
+    from ark_angel.review import resolve_lead
+    from ark_angel.style import terminal_style
+
+    style = terminal_style()
+    case = store.get_case(case_id)
+    data = build_report(case)
+    lead_ids = [resolve_lead(case, ref).lead.identifier for ref in lead_refs] or None
+    targets = cams.targets_from_report(data, radius_m, lead_ids)
+    if lead_ids and len(targets) < len(lead_ids):
+        raise click.ClickException("--lead must name location-cluster leads (`ark-angel lead list` shows them)")
+    for number, spot in enumerate(spots, start=1):
+        try:
+            lat, lon = (float(v) for v in spot.split(","))
+        except ValueError:
+            raise click.ClickException(f"--at wants LAT,LON, got {spot!r}")
+        targets.append(cams.CanvassTarget(f"spot {number}", lat, lon, radius_m))
+    if not targets:
+        raise click.ClickException("no location leads to canvass yet (run enrich, or give a spot with --at)")
+
+    if not online:
+        click.echo(f"Spots it would search ({len(targets)}):")
+        for t in targets:
+            click.echo(f"  {t.label}: {t.latitude:.5f}, {t.longitude:.5f}, within {t.radius_m:.0f} m")
+        click.echo("Re-run with --online to look them up. Only these circles are sent, to the Overpass API.")
+        return
+
+    click.echo(f"Looking up mapped cameras around {len(targets)} spot(s)...")
+    found = cams.fetch_cameras(targets, endpoint or cams.OVERPASS_URL)
+    canvass = cams.canvass(targets, found)
+    for t in canvass:
+        click.echo("\n" + style.heading(t.label) + style.dim(f"  {t.latitude:.5f}, {t.longitude:.5f}"))
+        click.echo(style.dim(f"  {google_maps_url(t.latitude, t.longitude)}"))
+        if t.latest:
+            click.echo(f"  latest dated evidence here: {t.latest}")
+        if not t.hits:
+            click.echo(style.dim(f"  no mapped cameras within {t.radius_m:.0f} m. Walk it: OSM coverage has gaps."))
+            continue
+        for hit in t.hits:
+            cam = hit.camera
+            facing = {True: style.accent("points at the spot"), False: style.dim("points away"),
+                      None: ""}[hit.facing]
+            who = f" · {cam.operator}" if cam.operator else ""
+            where = f" · {cam.zone}" if cam.zone else ""
+            click.echo(f"  {hit.distance_m:>5.0f} m  {style.strong(cam.kind)}{who}{where}  {facing}".rstrip())
+            click.echo(style.dim(f"           {street_view_url(cam.latitude, cam.longitude)}"))
+    total = len({(h.camera.osm_type, h.camera.osm_id) for t in canvass for h in t.hits})
+    click.echo(f"\n{total} mapped camera(s). {cams.RETENTION_NOTE}")
+    if any(h.camera.kind == "ALPR" for t in canvass for h in t.hits):
+        click.echo("Plate readers nearby: their operator (often a police department) can search reads for a "
+                   "plate in this case. Ask through the investigating agency.")
+    click.echo(style.dim("Map data © OpenStreetMap contributors (ODbL)."))
+
+    if out_path:
+        result = cams.canvass_dicts(canvass)
+        if out_path.lower().endswith(".csv") and not fmt:
+            Path(out_path).write_text(render_canvass_csv(result), encoding="utf-8", newline="")
+            click.echo(f"Wrote canvass checklist to {out_path}")
+        else:
+            _write_map(out_path, _map_format(out_path, fmt), data, result, not no_content)
+
+
 @cli.command("ingest-csv")
 @click.argument("case_id")
 @click.argument("csv_file", type=click.Path(exists=True, dir_okay=False))

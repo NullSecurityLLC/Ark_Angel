@@ -27,6 +27,9 @@ enough to ship in a short iteration without breaking the end-to-end workflow.
 - [x] CSV/TSV tip-line exports (`ingest-csv`).
 - More ingestion adapters: email (.eml), chat exports.
 - [x] Built-in offline US gazetteer (cities, counties, states) with `place resolve`.
+- [x] GIS export (KML for Google Earth/My Maps, GeoJSON) and Google Maps / Street View links.
+- [x] Video canvass: OSM-mapped cameras and plate readers near location leads (`cameras`).
+- Traffic-camera snapshots from state DOT 511 feeds near a lead (each state's API differs).
 - Gazetteers for other countries; real county/state boundaries instead of radius estimates.
 - Time-window correlation: entities that co-occur within N hours.
 - Co-occurrence links: two entities that keep appearing in the same items.
