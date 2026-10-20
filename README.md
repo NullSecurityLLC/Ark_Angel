@@ -33,6 +33,7 @@ There is no AI model in the loop. Every lead comes from pattern matching you can
 - **Built-in US gazetteer**: 21,454 cities and towns, 3,139 counties and all 50 states plus DC, offline. `place resolve` maps the unmatched names in your evidence to them, using state hints like "Boulder, CO" or the case's `--state`. It shows its picks before saving anything. Bigger places count for less: a state-sized match weighs a quarter of a town-sized one.
 - **Maps (GIS export)**: `ark-angel map` writes the case's location leads, evidence points and places as KML (Google Earth, Google My Maps) or GeoJSON (QGIS, ArcGIS, geojson.io), with lead rank, score and review status on every pin. Reports link each location cluster to Google Maps and Street View. No API key.
 - **Video canvass**: `ark-angel cameras` lists the surveillance cameras mapped in OpenStreetMap around each location lead (shop, street and traffic cameras, licence-plate readers), nearest first, with who runs them and whether they point at the spot. It's a list of places to ask for footage before it's overwritten. It never connects to a camera (opt-in, network required).
+- **Admin panel**: `ark-angel admin serve` opens a login-protected web view of your cases on this computer: the case list, ranked leads, the full case file and map downloads, plus your active sessions and every sign-in attempt. There is no sign-up page; accounts are made on the command line. Needs `ark-angel[web]`.
 - **Timeline**: every dated item, in order, with the most recent activity flagged.
 - **Lead review**: verify or dismiss leads, with a note on why. Every decision is kept as an audit trail. A dismissed lead comes back by itself, flagged as resurfaced, when new evidence joins it.
 - **Username lookup**: check a handle against public platforms (opt-in, network required). Hits are labelled unverified.
@@ -87,7 +88,7 @@ The executables aren't code-signed yet, so the OS will warn you the first time:
 Check your download against `SHA256SUMS.txt` on the release page
 (`sha256sum -c SHA256SUMS.txt --ignore-missing`, or `Get-FileHash` on Windows).
 
-**With Python 3.9+**, install it as a command with [pipx](https://pipx.pypa.io/):
+**With Python 3.10+**, install it as a command with [pipx](https://pipx.pypa.io/):
 
 ```bash
 pipx install git+https://github.com/NullSecurityLLC/Ark_Angel.git   # latest
@@ -235,6 +236,47 @@ nothing else, but those circles are the places your case cares about. Point
 `--endpoint` at a self-hosted Overpass if that matters. Narrow it with
 `--lead N` or add spots with `--at LAT,LON`. Map data © OpenStreetMap
 contributors (ODbL).
+
+## Admin panel
+
+```bash
+pipx install "ark-angel[web] @ git+https://github.com/NullSecurityLLC/Ark_Angel.git"   # or: pip install -e ".[web]"
+ark-angel admin create-user graves      # asks for a password twice (12+ characters)
+ark-angel admin serve                   # http://127.0.0.1:8765/
+ark-angel admin passwd graves           # change it; signs out every session
+ark-angel admin users                   # list accounts
+```
+
+The standalone executables include the panel. Accounts, sessions and the sign-in
+log live in `admin.db` next to the case data (override with `--db`). It is
+created readable by its owner only.
+
+By default the panel listens on 127.0.0.1, so only your computer can reach it.
+Sign-in is the only page that works without a session. Everything else:
+
+- **Sessions are server-side.** The browser holds a random token in an HttpOnly,
+  SameSite=Strict cookie; the database keeps only its SHA-256. Signing out,
+  changing the password or *Sign out all other sessions* ends sessions for real.
+  They also expire after 30 minutes idle or 12 hours.
+- **Passwords** are hashed with scrypt. A wrong password and an unknown username
+  get the same message and take the same time.
+- **Lockout:** 5 failed sign-ins for a username, or 20 from one address, lock it
+  for 15 minutes. Every attempt is logged (kept 90 days) and shown on the Security page.
+- **Every form has a CSRF token**, cross-site form posts are refused, and requests
+  must name an allowed host, which stops DNS-rebinding pages reaching a localhost panel.
+- **Headers:** a strict Content-Security-Policy with no inline scripts (the case
+  file allows only its own print helper, by hash), no framing, no referrer, no caching.
+
+To reach it from other machines, put it behind an HTTPS reverse proxy:
+
+```bash
+ark-angel admin serve --host 0.0.0.0 --behind-proxy --allow-host arkangel.example.org
+```
+
+That makes cookies HTTPS-only, turns on HSTS and trusts the proxy's forwarded
+headers (from `--proxy-ip`, default 127.0.0.1). The panel refuses to listen
+beyond localhost without `--behind-proxy`, so passwords never cross a network
+in plain HTTP.
 
 ## How leads are scored
 

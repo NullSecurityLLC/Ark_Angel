@@ -730,6 +730,113 @@ def lead_reopen(store: FileCaseStore, case_id: str, lead_ref: str, note: str, re
     _review(store, case_id, lead_ref, "open", note, reviewer)
 
 
+_WEB_MISSING = "the admin panel needs the web extras: pip install 'ark-angel[web]'"
+
+
+@cli.group("admin", help="Local admin panel: accounts and a login-protected web view of your cases.")
+@click.option("--db", "db_path", type=click.Path(dir_okay=False),
+              help="Admin database file (default: admin.db next to the case data directory).")
+@click.pass_context
+def admin_group(ctx: click.Context, db_path: str) -> None:
+    """Admin panel commands. There is no sign-up page: accounts are made here, on this machine."""
+    try:
+        from ark_angel.admin.db import AdminDB
+    except ImportError:
+        raise click.ClickException(_WEB_MISSING)
+    store = ctx.obj
+    ctx.obj = (store, AdminDB(db_path or store.data_dir.parent / "admin.db"))
+
+
+def _new_password(prompt: str = "Password") -> str:
+    from ark_angel.admin.db import validate_password
+
+    password = click.prompt(prompt, hide_input=True, confirmation_prompt=True)
+    validate_password(password)
+    return password
+
+
+@admin_group.command("create-user")
+@click.argument("username")
+@click.pass_obj
+def admin_create_user(obj, username: str) -> None:
+    """Create a panel account (asks for the password twice; 12 characters or more)."""
+    _, db = obj
+    db.create_user(username, _new_password())
+    click.echo(f"Created admin user {username.strip().lower()!r}. Start the panel with `ark-angel admin serve`.")
+
+
+@admin_group.command("passwd")
+@click.argument("username")
+@click.pass_obj
+def admin_passwd(obj, username: str) -> None:
+    """Change a password. Every session that user has is signed out."""
+    _, db = obj
+    db.set_password(username, _new_password("New password"))
+    click.echo(f"Password changed for {username.strip().lower()!r}; all of its sessions were signed out.")
+
+
+@admin_group.command("users")
+@click.pass_obj
+def admin_users(obj) -> None:
+    """List panel accounts."""
+    _, db = obj
+    names = db.usernames()
+    if not names:
+        click.echo("No admin users yet. Create one with `ark-angel admin create-user NAME`.")
+    for name in names:
+        click.echo(name)
+
+
+@admin_group.command("delete-user")
+@click.argument("username")
+@click.confirmation_option(prompt="Delete this account and sign out its sessions?")
+@click.pass_obj
+def admin_delete_user(obj, username: str) -> None:
+    """Delete a panel account."""
+    _, db = obj
+    if not db.delete_user(username):
+        raise click.ClickException(f"no user {username.strip().lower()!r}")
+    click.echo(f"Deleted {username.strip().lower()!r}")
+
+
+@admin_group.command("serve")
+@click.option("--host", default="127.0.0.1", show_default=True,
+              help="Address to listen on. Anything but localhost needs --behind-proxy.")
+@click.option("--port", type=int, default=8765, show_default=True)
+@click.option("--allow-host", "allow_hosts", multiple=True,
+              help="Host name the panel is reached at, e.g. arkangel.example.org (repeatable).")
+@click.option("--behind-proxy", is_flag=True,
+              help="Running behind an HTTPS reverse proxy: HTTPS-only cookies, HSTS, trust its forwarded headers.")
+@click.option("--proxy-ip", default="127.0.0.1", show_default=True, help="The reverse proxy's address.")
+@click.pass_obj
+def admin_serve(obj, host: str, port: int, allow_hosts: tuple, behind_proxy: bool, proxy_ip: str) -> None:
+    """Start the admin panel. By default only this computer can reach it."""
+    try:
+        import waitress
+
+        from ark_angel.admin.app import LOCAL_HOSTS, create_app
+    except ImportError:
+        raise click.ClickException(_WEB_MISSING)
+    store, db = obj
+    if not db.usernames():
+        raise click.ClickException("create an account first: ark-angel admin create-user NAME")
+    local = host in LOCAL_HOSTS
+    if not local and not behind_proxy:
+        raise click.ClickException(
+            f"listening on {host} would send passwords over plain HTTP to your network. Put the panel behind an "
+            "HTTPS reverse proxy and pass --behind-proxy and --allow-host, or keep the default 127.0.0.1.")
+    if behind_proxy and not allow_hosts:
+        raise click.ClickException("--behind-proxy needs --allow-host with the name the proxy serves it at")
+    app = create_app(store, db, allowed_hosts=(*LOCAL_HOSTS, *allow_hosts), secure_cookies=behind_proxy)
+    shown = f"[{host}]" if ":" in host else host
+    click.echo(f"ArkAngel admin panel on http://{shown}:{port}/" + (" (behind your HTTPS proxy)" if behind_proxy else ""))
+    click.echo("Ctrl+C to stop.")
+    proxy = {"trusted_proxy": proxy_ip, "trusted_proxy_count": 1,
+             "trusted_proxy_headers": {"x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"}} \
+        if behind_proxy else {}
+    waitress.serve(app, host=host, port=port, ident="ark-angel", **proxy)
+
+
 @cli.command("demo")
 @click.option("--out", "out_path", default="ark_angel_demo.html", show_default=True,
               type=click.Path(dir_okay=False), help="Where to write the HTML case file.")

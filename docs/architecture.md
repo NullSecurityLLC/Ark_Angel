@@ -41,6 +41,12 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
 - **report/**: `build.py` assembles a plain-data report that the text,
   Markdown, JSON and self-contained HTML renderers share. `gis.py` renders the same
   data as KML (Google Earth/My Maps) or GeoJSON, plus the canvass checklist CSV.
+- **admin/**: the optional web panel (`ark-angel[web]`). `db.py` is SQLite
+  storage for accounts (scrypt), server-side sessions (tokens stored as SHA-256)
+  and the sign-in log that drives lockout. `app.py` is the Flask app. One request
+  hook enforces the session, CSRF token, Origin and Host checks on every route,
+  and another sets the security headers. It reads cases through `FileCaseStore`
+  and renders them with the same report builders. Served by waitress.
 - **review.py**: lead review. The append-only `Case.reviews` log is matched
   back onto freshly rebuilt leads, with score-ordered lead numbers, geo-cluster
   carry-over by evidence overlap, and dismissed leads resurfacing on new evidence.

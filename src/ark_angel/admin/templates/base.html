@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>{% block title %}Admin{% endblock %} · ArkAngel</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+</head>
+<body>
+{% if me %}
+<header class="bar">
+  <a class="brand" href="{{ url_for('dashboard') }}"><img src="{{ url_for('static', filename='favicon.png') }}" alt="" width="20" height="20">ArkAngel <span>admin</span></a>
+  <nav>
+    <a href="{{ url_for('dashboard') }}"{% if request.endpoint in ('dashboard', 'case_view') %} aria-current="page"{% endif %}>Cases</a>
+    <a href="{{ url_for('security') }}"{% if request.endpoint == 'security' %} aria-current="page"{% endif %}>Security</a>
+  </nav>
+  <form method="post" action="{{ url_for('logout') }}" class="out">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <span class="who">{{ me }}</span><button type="submit">Sign out</button>
+  </form>
+</header>
+{% endif %}
+<main>
+{% block body %}{% endblock %}
+</main>
+</body>
+</html>

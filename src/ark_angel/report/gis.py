@@ -14,7 +14,7 @@ import csv
 import io
 import json
 import math
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405: only builds XML, never parses untrusted input
 from typing import Any, Optional, Sequence
 
 KML_NS = "http://www.opengis.net/kml/2.2"

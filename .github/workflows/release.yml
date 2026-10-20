@@ -88,7 +88,7 @@ jobs:
       - name: Build with PyInstaller
         run: |
           python -m pip install --upgrade pip
-          python -m pip install . pyinstaller==6.22.3
+          python -m pip install ".[web]" pyinstaller==6.22.3
           icon=()
           if [ -n "${{ matrix.icon }}" ]; then icon=(--icon "$GITHUB_WORKSPACE/${{ matrix.icon }}"); fi
           pyinstaller --onefile --name ark-angel --collect-data ark_angel "${icon[@]}" \
@@ -101,6 +101,7 @@ jobs:
           "$exe" --data-dir cases demo --out demo.html
           test -s demo.html
           "$exe" place find Boulder --state CO
+          "$exe" --data-dir cases admin users   # the panel's web extras are bundled
       - name: Name the file for its platform
         run: |
           mkdir -p out
