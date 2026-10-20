@@ -1,0 +1,9 @@
+{% set ep = request.endpoint %}
+<div class="label">Site administration</div>
+<nav class="tabs" aria-label="Admin">
+  <a href="{{ url_for('admin.home') }}"{% if ep == 'admin.home' %} aria-current="page"{% endif %}>Overview</a>
+  <a href="{{ url_for('admin.users') }}"{% if ep == 'admin.users' %} aria-current="page"{% endif %}>Users</a>
+  <a href="{{ url_for('admin.publications') }}"{% if ep == 'admin.publications' %} aria-current="page"{% endif %}>Profile reviews</a>
+  <a href="{{ url_for('admin.cases') }}"{% if ep == 'admin.cases' %} aria-current="page"{% endif %}>All cases</a>
+  <a href="{{ url_for('admin.activity') }}"{% if ep == 'admin.activity' %} aria-current="page"{% endif %}>Sign-in log</a>
+</nav>

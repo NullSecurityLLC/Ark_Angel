@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% set p = case.published %}
+{% block meta %}<meta name="robots" content="index,follow">
+<meta name="description" content="{{ p.name }} is missing.{% if p.last_seen_place %} Last seen {{ p.last_seen_place }}{% if p.last_seen_date %}, {{ p.last_seen_date }}{% endif %}.{% endif %} Send a tip if you know anything.">
+<meta property="og:title" content="Missing: {{ p.name }}">
+<meta property="og:description" content="{% if p.last_seen_place %}Last seen {{ p.last_seen_place }}{% if p.last_seen_date %}, {{ p.last_seen_date }}{% endif %}. {% endif %}Have you seen them?">
+{% if case.published_photo %}<meta property="og:image" content="{{ url_for('public.media', name=case.published_photo, _external=True) }}">{% endif %}{% endblock %}
+{% block title %}Missing: {{ p.name }}{% endblock %}
+{% block body %}
+<article class="profile">
+  <div class="photo">
+    {% if case.published_photo %}<img src="{{ url_for('public.media', name=case.published_photo) }}" alt="Photo of {{ p.name }}">{% else %}<div class="nophoto" aria-hidden="true">No photo</div>{% endif %}
+  </div>
+  <div class="facts">
+    <div class="label">Missing</div>
+    <h1>{{ p.name }}</h1>
+    <dl>
+      {% if p.age %}<dt>Age</dt><dd>{{ p.age }}</dd>{% endif %}
+      {% if p.last_seen_date %}<dt>Last seen</dt><dd>{{ p.last_seen_date }}</dd>{% endif %}
+      {% if p.last_seen_place %}<dt>Where</dt><dd>{{ p.last_seen_place }}</dd>{% endif %}
+      {% if p.contact %}<dt>Contact</dt><dd>{{ p.contact }}</dd>{% endif %}
+    </dl>
+    {% if p.description %}<p class="description">{{ p.description }}</p>{% endif %}
+    <p class="fine">Share this page: <code>{{ url_for('public.profile', slug=case.slug, _external=True) }}</code></p>
+  </div>
+</article>
+
+<section class="tip" id="tip">
+  <h2>Send a tip</h2>
+  <p class="callout"><strong>If you see {{ p.name }} right now, or someone is in danger, call 911.</strong> Tips go to the people working this case.</p>
+  {% if errors %}<div class="alert" role="alert">{% for e in errors %}<p>{{ e }}</p>{% endfor %}</div>{% endif %}
+  <form method="post" action="{{ url_for('public.submit_tip', slug=case.slug) }}" enctype="multipart/form-data" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+    <label for="what">What did you see or hear? <span class="req">required</span></label>
+    <textarea id="what" name="what" rows="6" required minlength="10" maxlength="5000">{{ form.what or "" }}</textarea>
+    <div class="row">
+      <div><label for="when">When?</label><input id="when" name="when" maxlength="120" placeholder="e.g. Saturday around 9pm" value="{{ form.when or '' }}"></div>
+      <div><label for="where">Where?</label><input id="where" name="where" maxlength="200" placeholder="Street, landmark or town" value="{{ form.where or '' }}"></div>
+    </div>
+    <label for="photo">Photo (optional)</label>
+    <input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp">
+    <p class="fine">A photo straight from your phone helps most: its location and time help place the sighting. Up to 10 MB.</p>
+    <fieldset>
+      <legend>Your contact details (optional)</legend>
+      <p class="fine">Leave these blank to stay anonymous. If you add them, only the case team sees them, in case they need to ask you something.</p>
+      <div class="row">
+        <div><label for="contact_name">Name</label><input id="contact_name" name="contact_name" maxlength="120" autocomplete="name" value="{{ form.contact_name or '' }}"></div>
+        <div><label for="contact_phone">Phone</label><input id="contact_phone" name="contact_phone" maxlength="60" autocomplete="tel" value="{{ form.contact_phone or '' }}"></div>
+      </div>
+      <label for="contact_email">Email</label>
+      <input id="contact_email" name="contact_email" type="email" maxlength="200" autocomplete="email" value="{{ form.contact_email or '' }}">
+    </fieldset>
+    <button type="submit" class="btn primary">Send tip</button>
+    <p class="fine">We don't store your IP address. See <a href="{{ url_for('public.privacy') }}">privacy</a>.</p>
+  </form>
+</section>
+{% endblock %}

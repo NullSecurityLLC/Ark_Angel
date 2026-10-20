@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import threading
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -71,8 +73,15 @@ class FileCaseStore(CaseStore):
         return self.data_dir / f"{case_id}.json"
 
     def _write(self, case: Case) -> None:
+        """Write via a temporary file and a rename, so a crash mid-write never leaves half a case."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        self._path(case.identifier).write_text(json.dumps(_case_to_dict(case), indent=2), encoding="utf-8")
+        path = self._path(case.identifier)
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        try:
+            tmp.write_text(json.dumps(_case_to_dict(case), indent=2), encoding="utf-8")
+            os.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
 
 
 def _upsert(existing: list[_T], incoming: Iterable[_T]) -> list[_T]:

@@ -1,6 +1,7 @@
 """Command-line interface for Ark Angel."""
 import os
 import sys
+import time
 from pathlib import Path
 
 import click
@@ -30,7 +31,8 @@ class _Group(click.Group):
     "--data-dir",
     default=DEFAULT_DATA_DIR,
     show_default=True,
-    help="Directory where case data is stored.",
+    envvar="ARK_ANGEL_DATA_DIR",
+    help="Directory where case data is stored (or $ARK_ANGEL_DATA_DIR).",
 )
 @click.option("--no-color", is_flag=True, help="Plain output (also honours the NO_COLOR environment variable).")
 @click.pass_context
@@ -730,111 +732,185 @@ def lead_reopen(store: FileCaseStore, case_id: str, lead_ref: str, note: str, re
     _review(store, case_id, lead_ref, "open", note, reviewer)
 
 
-_WEB_MISSING = "the admin panel needs the web extras: pip install 'ark-angel[web]'"
+_WEB_MISSING = "the website needs the web extras: pip install 'ark-angel[web]'"
 
 
-@cli.group("admin", help="Local admin panel: accounts and a login-protected web view of your cases.")
+@cli.group("web", help="The ArkAngel website: public profiles and tips, member workspaces, admin console.")
 @click.option("--db", "db_path", type=click.Path(dir_okay=False),
-              help="Admin database file (default: admin.db next to the case data directory).")
+              help="Site database (default: web.db next to the case data directory).")
 @click.pass_context
-def admin_group(ctx: click.Context, db_path: str) -> None:
-    """Admin panel commands. There is no sign-up page: accounts are made here, on this machine."""
+def web_group(ctx: click.Context, db_path: str) -> None:
+    """Website commands. Run `web create-admin` once, then `web serve`."""
     try:
-        from ark_angel.admin.db import AdminDB
+        from ark_angel.web.db import SiteDB
     except ImportError:
         raise click.ClickException(_WEB_MISSING)
     store = ctx.obj
-    ctx.obj = (store, AdminDB(db_path or store.data_dir.parent / "admin.db"))
+    ctx.obj = (store, SiteDB(db_path or store.data_dir.parent / "web.db"))
 
 
 def _new_password(prompt: str = "Password") -> str:
-    from ark_angel.admin.db import validate_password
+    from ark_angel.web.db import validate_password
 
     password = click.prompt(prompt, hide_input=True, confirmation_prompt=True)
     validate_password(password)
     return password
 
 
-@admin_group.command("create-user")
+@web_group.command("create-admin")
 @click.argument("username")
 @click.pass_obj
-def admin_create_user(obj, username: str) -> None:
-    """Create a panel account (asks for the password twice; 12 characters or more)."""
+def web_create_admin(obj, username: str) -> None:
+    """Create an approved admin account (asks for the password twice; 12+ characters)."""
     _, db = obj
-    db.create_user(username, _new_password())
-    click.echo(f"Created admin user {username.strip().lower()!r}. Start the panel with `ark-angel admin serve`.")
+    db.create_user(username, _new_password(), role="admin", status="active")
+    click.echo(f"Created admin {username.strip().lower()!r}. Start the site with `ark-angel web serve`.")
 
 
-@admin_group.command("passwd")
+@web_group.command("users")
+@click.option("--pending", is_flag=True, help="Only accounts waiting for approval.")
+@click.pass_obj
+def web_users(obj, pending: bool) -> None:
+    """List accounts."""
+    _, db = obj
+    rows = db.users("pending" if pending else None)
+    if not rows:
+        click.echo("No pending accounts." if pending else "No accounts yet. Create one with `ark-angel web create-admin`.")
+    for row in rows:
+        note = f"  {row['signup_note']}" if row["status"] == "pending" and row["signup_note"] else ""
+        click.echo(f"{row['username']:<24} {row['role']:<7} {row['status']:<9}{note}")
+
+
+@web_group.command("approve")
 @click.argument("username")
 @click.pass_obj
-def admin_passwd(obj, username: str) -> None:
-    """Change a password. Every session that user has is signed out."""
+def web_approve(obj, username: str) -> None:
+    """Approve a pending account (or re-enable a disabled one)."""
+    _, db = obj
+    db.set_status(username, "active")
+    click.echo(f"Approved {username.strip().lower()!r}")
+
+
+@web_group.command("disable")
+@click.argument("username")
+@click.pass_obj
+def web_disable(obj, username: str) -> None:
+    """Disable an account and sign it out everywhere."""
+    _, db = obj
+    db.set_status(username, "disabled")
+    click.echo(f"Disabled {username.strip().lower()!r}")
+
+
+@web_group.command("passwd")
+@click.argument("username")
+@click.pass_obj
+def web_passwd(obj, username: str) -> None:
+    """Set a password. Every session that user has is signed out."""
     _, db = obj
     db.set_password(username, _new_password("New password"))
     click.echo(f"Password changed for {username.strip().lower()!r}; all of its sessions were signed out.")
 
 
-@admin_group.command("users")
-@click.pass_obj
-def admin_users(obj) -> None:
-    """List panel accounts."""
-    _, db = obj
-    names = db.usernames()
-    if not names:
-        click.echo("No admin users yet. Create one with `ark-angel admin create-user NAME`.")
-    for name in names:
-        click.echo(name)
-
-
-@admin_group.command("delete-user")
+@web_group.command("delete-user")
 @click.argument("username")
 @click.confirmation_option(prompt="Delete this account and sign out its sessions?")
 @click.pass_obj
-def admin_delete_user(obj, username: str) -> None:
-    """Delete a panel account."""
+def web_delete_user(obj, username: str) -> None:
+    """Delete an account (refused while it still owns cases)."""
     _, db = obj
     if not db.delete_user(username):
         raise click.ClickException(f"no user {username.strip().lower()!r}")
     click.echo(f"Deleted {username.strip().lower()!r}")
 
 
-@admin_group.command("serve")
+@web_group.command("import-case")
+@click.argument("case_id")
+@click.option("--owner", required=True, help="Username that will own the case on the site.")
+@click.pass_obj
+def web_import_case(obj, case_id: str, owner: str) -> None:
+    """Put a case made with the command line onto the site, owned by OWNER. Its data stays where it is."""
+    store, db = obj
+    case = store.get_case(case_id)
+    db.register_case(case.identifier, owner)
+    click.echo(f"Case {case.identifier!r} is now on the site, owned by {owner.strip().lower()!r}.")
+
+
+@web_group.command("backup")
+@click.argument("dest", type=click.Path(dir_okay=False))
+@click.pass_obj
+def web_backup(obj, dest: str) -> None:
+    """Write everything (site database, cases, uploads, profile photos) to one .tar.gz, safely while running."""
+    import sqlite3
+    import tarfile
+    import tempfile
+
+    store, db = obj
+    base = store.data_dir.parent
+    with tempfile.TemporaryDirectory() as tmp:
+        snapshot = Path(tmp) / db.path.name
+        with sqlite3.connect(db.path) as live, sqlite3.connect(snapshot) as copy:
+            live.backup(copy)  # consistent even while the site is writing
+        # Owner-only from the first byte: the archive holds tippers' contact details.
+        fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as out, tarfile.open(fileobj=out, mode="w:gz") as tar:
+            tar.add(snapshot, arcname=db.path.name)
+            for folder in (store.data_dir, base / "uploads", base / "media"):
+                if folder.exists():
+                    tar.add(folder, arcname=folder.name)
+    click.echo(f"Backed up to {dest}. It holds tips and contact details: store it encrypted.")
+
+
+@web_group.command("serve")
 @click.option("--host", default="127.0.0.1", show_default=True,
               help="Address to listen on. Anything but localhost needs --behind-proxy.")
 @click.option("--port", type=int, default=8765, show_default=True)
-@click.option("--allow-host", "allow_hosts", multiple=True,
-              help="Host name the panel is reached at, e.g. arkangel.example.org (repeatable).")
+@click.option("--allow-host", "allow_hosts", multiple=True, envvar="ARK_ANGEL_ALLOW_HOST",
+              help="Host name the site is reached at, e.g. arkangel.example.org (repeatable; or "
+                   "$ARK_ANGEL_ALLOW_HOST, space-separated).")
 @click.option("--behind-proxy", is_flag=True,
               help="Running behind an HTTPS reverse proxy: HTTPS-only cookies, HSTS, trust its forwarded headers.")
-@click.option("--proxy-ip", default="127.0.0.1", show_default=True, help="The reverse proxy's address.")
+@click.option("--proxy-ip", default="127.0.0.1", show_default=True,
+              help="The reverse proxy's address. '*' trusts any peer: only when nothing else can reach the port "
+                   "(e.g. an unpublished Docker port).")
+@click.option("--site-name", default="ArkAngel", show_default=True, envvar="ARK_ANGEL_SITE_NAME",
+              help="Name shown in the header and titles (or $ARK_ANGEL_SITE_NAME).")
+@click.option("--threads", type=int, default=8, show_default=True)
+@click.option("--wait-for-admin", is_flag=True,
+              help="With no admin yet, wait for one to be created instead of exiting (used by the Docker image).")
 @click.pass_obj
-def admin_serve(obj, host: str, port: int, allow_hosts: tuple, behind_proxy: bool, proxy_ip: str) -> None:
-    """Start the admin panel. By default only this computer can reach it."""
+def web_serve(obj, host: str, port: int, allow_hosts: tuple, behind_proxy: bool, proxy_ip: str, site_name: str,
+              threads: int, wait_for_admin: bool) -> None:
+    """Start the website. By default only this computer can reach it."""
     try:
         import waitress
 
-        from ark_angel.admin.app import LOCAL_HOSTS, create_app
+        from ark_angel.web.app import LOCAL_HOSTS, create_app
     except ImportError:
         raise click.ClickException(_WEB_MISSING)
     store, db = obj
-    if not db.usernames():
-        raise click.ClickException("create an account first: ark-angel admin create-user NAME")
-    local = host in LOCAL_HOSTS
-    if not local and not behind_proxy:
+    if not db.has_admin():
+        if not wait_for_admin:
+            raise click.ClickException("create an admin first: ark-angel web create-admin NAME")
+        # No first-run web setup page on purpose: whoever reached it first would own the site.
+        click.echo("No admin yet. Create one with: docker compose run --rm app ark-angel web create-admin NAME")
+        while not db.has_admin():
+            time.sleep(3)
+        click.echo("Admin found, starting.")
+    if host not in LOCAL_HOSTS and not behind_proxy:
         raise click.ClickException(
-            f"listening on {host} would send passwords over plain HTTP to your network. Put the panel behind an "
+            f"listening on {host} would send passwords over plain HTTP to your network. Put the site behind an "
             "HTTPS reverse proxy and pass --behind-proxy and --allow-host, or keep the default 127.0.0.1.")
     if behind_proxy and not allow_hosts:
         raise click.ClickException("--behind-proxy needs --allow-host with the name the proxy serves it at")
-    app = create_app(store, db, allowed_hosts=(*LOCAL_HOSTS, *allow_hosts), secure_cookies=behind_proxy)
+    app = create_app(store, db, allowed_hosts=(*LOCAL_HOSTS, *allow_hosts), secure_cookies=behind_proxy,
+                     site_name=site_name)
     shown = f"[{host}]" if ":" in host else host
-    click.echo(f"ArkAngel admin panel on http://{shown}:{port}/" + (" (behind your HTTPS proxy)" if behind_proxy else ""))
+    click.echo(f"{site_name} website on http://{shown}:{port}/" + (" (behind your HTTPS proxy)" if behind_proxy else ""))
     click.echo("Ctrl+C to stop.")
     proxy = {"trusted_proxy": proxy_ip, "trusted_proxy_count": 1,
              "trusted_proxy_headers": {"x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"}} \
         if behind_proxy else {}
-    waitress.serve(app, host=host, port=port, ident="ark-angel", **proxy)
+    waitress.serve(app, host=host, port=port, ident="ark-angel", threads=threads, **proxy)
 
 
 @cli.command("demo")

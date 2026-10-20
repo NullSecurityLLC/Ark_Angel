@@ -1,0 +1,12 @@
+{% set ep = request.endpoint %}
+<div class="label">Case {{ g.case.identifier }} · {{ "site admin access" if g.via_admin else "you are " + g.role }}</div>
+<h1>{{ g.case.title }}</h1>
+<nav class="tabs" aria-label="Case">
+  <a href="{{ url_for('workspace.case', case_id=g.case.identifier) }}"{% if ep == 'workspace.case' %} aria-current="page"{% endif %}>Leads</a>
+  <a href="{{ url_for('workspace.tips', case_id=g.case.identifier) }}"{% if ep == 'workspace.tips' %} aria-current="page"{% endif %}>Website tips</a>
+  {% if g.role in ('editor', 'owner') %}<a href="{{ url_for('workspace.upload', case_id=g.case.identifier) }}"{% if ep == 'workspace.upload' %} aria-current="page"{% endif %}>Add evidence</a>{% endif %}
+  {% if g.role == 'owner' %}
+  <a href="{{ url_for('workspace.profile', case_id=g.case.identifier) }}"{% if ep == 'workspace.profile' %} aria-current="page"{% endif %}>Public profile{% if g.meta.published %} <span class="tag live">live</span>{% elif g.meta.draft_state == 'requested' %} <span class="tag">in review</span>{% endif %}</a>
+  <a href="{{ url_for('workspace.members', case_id=g.case.identifier) }}"{% if ep == 'workspace.members' %} aria-current="page"{% endif %}>Sharing</a>
+  {% endif %}
+</nav>

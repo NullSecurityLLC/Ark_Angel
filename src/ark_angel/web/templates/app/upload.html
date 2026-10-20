@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Add evidence · {{ g.case.title }}{% endblock %}
+{% block body %}
+{% include "app/_case_nav.html" %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="{{ url_for('workspace.upload', case_id=g.case.identifier) }}" enctype="multipart/form-data" class="stack narrow-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <fieldset>
+    <legend>What kind of file is it?</legend>
+    {% for key, label in kinds.items() %}
+    <label class="choice"><input type="radio" name="kind" value="{{ key }}" required{% if loop.first %} checked{% endif %}> {{ label }}</label>
+    {% endfor %}
+  </fieldset>
+  <label for="file">File (up to 25 MB)</label>
+  <input id="file" name="file" type="file" required>
+  <button type="submit" class="btn primary">Add and re-run analysis</button>
+</form>
+<p class="fine">The file name becomes the source name in the analysis (e.g. <code>volunteer_notes.txt</code> shows up as <code>volunteer_notes</code>), and evidence from different sources that agrees ranks higher. Files are stored privately with the case and never served publicly.</p>
+{% endblock %}

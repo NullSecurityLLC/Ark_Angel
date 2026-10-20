@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}My cases{% endblock %}
+{% block body %}
+<div class="label">Workspace</div>
+<h1>My cases</h1>
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% if cases %}
+<div class="table-wrap"><table>
+<thead><tr><th>Case</th><th>Your role</th><th class="num">Evidence</th><th>Public profile</th></tr></thead>
+<tbody>
+{% for c in cases %}
+<tr>
+  <td><a href="{{ url_for('workspace.case', case_id=c.id) }}">{{ c.title }}</a><br><span class="dim mono">{{ c.id }}</span></td>
+  <td>{{ c.role }}</td>
+  <td class="num">{{ c.evidence }}</td>
+  <td>{% if c.live %}<span class="tag live">live</span>{% elif c.requested %}<span class="tag">in review</span>{% else %}<span class="dim">private</span>{% endif %}</td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+{% else %}
+<p class="empty">No cases yet. Start one below, or ask a case owner to share theirs with you.</p>
+{% endif %}
+
+<section>
+<h2>Start a case</h2>
+<form method="post" action="{{ url_for('workspace.new_case') }}" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="title" class="sr">Case title</label>
+  <input id="title" name="title" required minlength="3" maxlength="120" placeholder="e.g. Riley Tamsin, Denver, Sept 2026">
+  <button type="submit" class="btn primary">Create case</button>
+</form>
+<p class="fine">A new case is private: only you can see it until you share it or publish a profile.</p>
+</section>
+{% endblock %}

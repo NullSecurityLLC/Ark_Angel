@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Profile reviews · Admin{% endblock %}
+{% block body %}
+{% include "admin/_nav.html" %}
+<h1>Profile reviews</h1>
+{% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+<p class="fine">Before approving: check the police report is real (call the agency's non-emergency line if unsure) and the requester is who they say. A fake "missing" profile can be used to find someone who left an abuser.</p>
+{% for r in requests %}{% set d = r.draft %}
+<article class="review-card">
+  <div class="review-photo">{% if r.draft_photo %}<img src="{{ url_for('admin.publication_photo', case_id=r.case_id) }}" alt="Submitted photo">{% else %}<div class="nophoto">No photo</div>{% endif %}</div>
+  <div>
+    <h2>{{ d.name or "(no name)" }} {% if r.published %}<span class="tag live">update to a live profile</span>{% else %}<span class="tag warn">new</span>{% endif %}</h2>
+    <dl>
+      <dt>Requested by</dt><dd class="mono">{{ r.owner }}</dd>
+      <dt>Police report</dt><dd>{{ d.police_report or "—" }}</dd>
+      <dt>Attested</dt><dd>{{ "yes" if d.attest else "no" }}</dd>
+      <dt>Age</dt><dd>{{ d.age or "—" }}</dd>
+      <dt>Last seen</dt><dd>{{ d.last_seen_place or "—" }}{% if d.last_seen_date %}, {{ d.last_seen_date }}{% endif %}</dd>
+      <dt>Public contact</dt><dd>{{ d.contact or "—" }}</dd>
+    </dl>
+    {% if d.description %}<p class="description">{{ d.description }}</p>{% endif %}
+    {% if r.published %}<p class="dim">Currently public: {{ r.published.name }}, {{ r.published.last_seen_place }}{% if r.published.last_seen_date %}, {{ r.published.last_seen_date }}{% endif %}.</p>{% endif %}
+    <form method="post" action="{{ url_for('admin.decide_publication', case_id=r.case_id) }}" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="note-{{ loop.index }}">Note to the owner (required to send back)</label>
+      <input id="note-{{ loop.index }}" name="note" maxlength="500">
+      <div class="actions">
+        <button name="decision" value="approve" class="btn primary">Approve and publish</button>
+        <button name="decision" value="reject" class="btn ghost">Send back</button>
+      </div>
+    </form>
+  </div>
+</article>
+{% else %}
+<p class="empty">Nothing to review.</p>
+{% endfor %}
+{% endblock %}
