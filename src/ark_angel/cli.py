@@ -312,7 +312,8 @@ def cameras(store: FileCaseStore, case_id: str, online: bool, radius_m: float, l
     if out_path:
         result = cams.canvass_dicts(canvass)
         if out_path.lower().endswith(".csv") and not fmt:
-            Path(out_path).write_text(render_canvass_csv(result), encoding="utf-8", newline="")
+            with open(out_path, "w", encoding="utf-8", newline="") as handle:  # write_text has no newline= on 3.9
+                handle.write(render_canvass_csv(result))
             click.echo(f"Wrote canvass checklist to {out_path}")
         else:
             _write_map(out_path, _map_format(out_path, fmt), data, result, not no_content)
