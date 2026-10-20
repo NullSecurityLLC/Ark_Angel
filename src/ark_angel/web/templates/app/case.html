@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}{{ g.case.title }}{% endblock %}
+{% block body %}
+{% include "app/_case_nav.html" %}
+{% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+
+<div class="meta">
+  <span><b>{{ data.case.evidence_count }}</b> evidence items</span>
+  <span><b>{{ data.case.sources|length }}</b> sources</span>
+  <span><b>{{ data.clusters|length }}</b> location clusters</span>
+</div>
+<div class="actions">
+  <a class="btn" href="{{ url_for('workspace.report', case_id=g.case.identifier) }}">Open full case file</a>
+  <a class="btn ghost" href="{{ url_for('workspace.case_map', case_id=g.case.identifier, fmt='kml') }}">Download KML</a>
+  <a class="btn ghost" href="{{ url_for('workspace.case_map', case_id=g.case.identifier, fmt='geojson') }}">Download GeoJSON</a>
+  {% if g.role in ('editor', 'owner') %}
+  <form method="post" action="{{ url_for('workspace.enrich', case_id=g.case.identifier) }}" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn ghost">Re-run analysis</button>
+  </form>
+  {% endif %}
+</div>
+
+<section>
+<h2>Leads</h2>
+{% if open_leads %}
+<ol class="leads">
+{% for lead in open_leads %}
+<li class="lead {{ lead.status }}">
+  <div class="lead-head">
+    <span class="rank">#{{ lead.rank }}</span>
+    <span class="score">{{ "%.1f"|format(lead.score) }}</span>
+    <span class="summary">{{ lead.summary }}</span>
+    <span class="tag{% if lead.status == 'verified' %} live{% endif %}">{{ "resurfaced" if lead.resurfaced else lead.status }}</span>
+  </div>
+  <details>
+    <summary>Why it ranks here{% if g.role in ('editor', 'owner') %} · review{% endif %}</summary>
+    <ul class="reasons">{% for r in lead.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+    {% if lead.review %}<p class="dim">Last review: {{ lead.review.status }} by {{ lead.review.reviewer }}{% if lead.review.note %}: {{ lead.review.note }}{% endif %}</p>{% endif %}
+    {% if g.role in ('editor', 'owner') %}
+    <form method="post" action="{{ url_for('workspace.review', case_id=g.case.identifier) }}" class="review-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="lead" value="{{ lead.identifier }}">
+      <label for="note-{{ loop.index }}" class="sr">Note</label>
+      <input id="note-{{ loop.index }}" name="note" maxlength="500" placeholder="Note (required to dismiss)">
+      {% if lead.status != 'verified' %}<button name="status" value="verified" class="btn small">Verify</button>{% endif %}
+      <button name="status" value="dismissed" class="btn small ghost">Dismiss</button>
+      {% if lead.status != 'open' %}<button name="status" value="open" class="btn small ghost">Reopen</button>{% endif %}
+    </form>
+    {% endif %}
+  </details>
+</li>
+{% endfor %}
+</ol>
+{% else %}
+<p class="empty">No leads yet. {% if g.role in ('editor', 'owner') %}<a href="{{ url_for('workspace.upload', case_id=g.case.identifier) }}">Add evidence</a> and the analysis runs by itself.{% endif %}</p>
+{% endif %}
+{% if dismissed %}
+<details class="block">
+  <summary>Dismissed ({{ dismissed|length }})</summary>
+  <ul class="plain">{% for lead in dismissed %}<li>#{{ lead.rank }} {{ lead.summary }}{% if lead.review and lead.review.note %} <span class="dim">({{ lead.review.note }})</span>{% endif %}</li>{% endfor %}</ul>
+</details>
+{% endif %}
+</section>
+
+<section>
+<h2>Latest dated activity</h2>
+{% if timeline %}
+<ol class="timeline">
+{% for ev in timeline %}<li><time>{{ ev.when }}</time><span><span class="src">{{ ev.source }}</span>{{ ev.text }}</span></li>{% endfor %}
+</ol>
+{% else %}<p class="empty">No dated evidence yet.</p>{% endif %}
+</section>
+
+{% if g.role == 'owner' %}
+<section class="danger">
+<h2>Delete this case</h2>
+<p>This permanently deletes the case, its evidence, its uploads and its public profile.</p>
+<form method="post" action="{{ url_for('workspace.delete_case', case_id=g.case.identifier) }}" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="confirm" class="sr">Type the case id to confirm</label>
+  <input id="confirm" name="confirm" placeholder="Type {{ g.case.identifier }} to confirm" autocomplete="off">
+  <button type="submit" class="btn danger">Delete case</button>
+</form>
+</section>
+{% endif %}
+{% endblock %}

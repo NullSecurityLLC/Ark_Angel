@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Privacy{% endblock %}
+{% block body %}
+<section class="narrow prose">
+  <div class="label">How we handle what you send</div>
+  <h1>Privacy</h1>
+  <h2>If you send a tip</h2>
+  <ul>
+    <li>Your tip goes to the people working that case: the family or their representative, and anyone they've shared the case with. It is never shown publicly.</li>
+    <li>Contact details are optional. If you give them, only the case team sees them.</li>
+    <li>We don't store your IP address. To stop spam we keep a scrambled code made from it, which can't be turned back into the address, and we delete it after 24 hours.</li>
+    <li>If you attach a photo, the location, time and phone model saved inside it are kept, because they help place a sighting. Only the case team can see the photo. Remove location from a photo before sending if you'd rather not share it.</li>
+  </ul>
+  <h2>Public profiles</h2>
+  <ul>
+    <li>A profile goes public only after an administrator reviews it, and only for someone reported missing to police.</li>
+    <li>Profile photos are re-saved without any hidden data, so they can't reveal where they were taken.</li>
+    <li>A profile comes down as soon as the person is found or the family asks.</li>
+  </ul>
+  <h2>Accounts</h2>
+  <ul>
+    <li>We store your username, a scrambled form of your password (never the password itself), and a log of sign-ins (time, address, browser) for 90 days, to spot break-in attempts.</li>
+  </ul>
+  <p>No advertising, no trackers, no third-party scripts. This site is open source.</p>
+</section>
+{% endblock %}

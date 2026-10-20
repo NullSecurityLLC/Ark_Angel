@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Users · Admin{% endblock %}
+{% block body %}
+{% include "admin/_nav.html" %}
+<h1>Users</h1>
+{% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+<p class="fine">Approve only people you can place: a family member, an agency, a known search group. Approved members can create cases and see tips on cases shared with them.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>User</th><th>Status</th><th>Role</th><th>Why they asked</th><th>Actions</th></tr></thead>
+<tbody>
+{% for u in users %}
+<tr class="{{ u.status }}">
+  <td class="mono">{{ u.username }}{% if me.user_id == u.id %} <span class="tag">you</span>{% endif %}<br><span class="dim">{{ u.created_at|when }}</span></td>
+  <td><span class="tag{% if u.status == 'active' %} live{% elif u.status == 'pending' %} warn{% endif %}">{{ u.status }}</span></td>
+  <td>{{ u.role }}</td>
+  <td class="clip">{{ u.signup_note or "—" }}</td>
+  <td>
+    <form method="post" action="{{ url_for('admin.user_action', username=u.username) }}" class="btn-row">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if u.status == 'pending' %}
+        <button name="action" value="approve" class="btn small primary">Approve</button>
+        <button name="action" value="reject" class="btn small ghost">Reject</button>
+      {% elif u.status == 'active' %}
+        {% if me.user_id != u.id %}<button name="action" value="disable" class="btn small ghost">Disable</button>{% endif %}
+        {% if u.role == 'member' %}<button name="action" value="make_admin" class="btn small ghost">Make admin</button>
+        {% elif me.user_id != u.id %}<button name="action" value="make_member" class="btn small ghost">Remove admin</button>{% endif %}
+      {% else %}
+        <button name="action" value="enable" class="btn small ghost">Re-enable</button>
+      {% endif %}
+    </form>
+  </td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+{% endblock %}

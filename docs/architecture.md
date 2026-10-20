@@ -41,12 +41,13 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
 - **report/**: `build.py` assembles a plain-data report that the text,
   Markdown, JSON and self-contained HTML renderers share. `gis.py` renders the same
   data as KML (Google Earth/My Maps) or GeoJSON, plus the canvass checklist CSV.
-- **admin/**: the optional web panel (`ark-angel[web]`). `db.py` is SQLite
-  storage for accounts (scrypt), server-side sessions (tokens stored as SHA-256)
-  and the sign-in log that drives lockout. `app.py` is the Flask app. One request
-  hook enforces the session, CSRF token, Origin and Host checks on every route,
-  and another sets the security headers. It reads cases through `FileCaseStore`
-  and renders them with the same report builders. Served by waitress.
+- **web/**: the optional website (`ark-angel[web]`, Flask + waitress).
+  - `db.py`: SQLite storage for everything about people. It holds accounts (scrypt hashes, a role, and a pending, active or disabled status), server-side sessions (tokens stored as SHA-256) and the sign-in log that drives lockout. It also records case ownership and sharing (owner, editor or viewer), each public profile's draft and approved copies, and rate-limit events keyed by an HMAC of the address.
+  - `app.py`: one request hook enforces access by area, CSRF, Origin and Host on every route; another sets the security headers.
+  - `public.py`, `workspace.py` and `admin.py` are the three areas.
+  - `site.py`: per-case write locks, upload storage and image handling. Uploads are validated by Pillow with a pixel cap; profile photos are re-encoded without metadata.
+  - Case evidence stays in `FileCaseStore` and goes through the same pipeline and report builders as the CLI.
+  - Deployment: `Dockerfile`, `compose.yaml` and `deploy/Caddyfile`; see `docs/deploy.md`.
 - **review.py**: lead review. The append-only `Case.reviews` log is matched
   back onto freshly rebuilt leads, with score-ordered lead numbers, geo-cluster
   carry-over by evidence overlap, and dismissed leads resurfacing on new evidence.

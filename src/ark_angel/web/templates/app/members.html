@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Sharing · {{ g.case.title }}{% endblock %}
+{% block body %}
+{% include "app/_case_nav.html" %}
+{% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+<div class="table-wrap"><table>
+<thead><tr><th>Person</th><th>Role</th><th></th></tr></thead>
+<tbody>
+{% for m in members %}
+<tr>
+  <td class="mono">{{ m.username }}</td>
+  <td>{{ m.role }}</td>
+  <td>{% if m.role != 'owner' %}
+    <form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="username" value="{{ m.username }}"><button name="action" value="remove" class="btn small ghost">Remove</button></form>
+  {% endif %}</td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+
+<section>
+<h2>Share with someone</h2>
+<form method="post" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="username" class="sr">Username</label>
+  <input id="username" name="username" required maxlength="64" placeholder="Their username" autocapitalize="none">
+  <label for="role" class="sr">Role</label>
+  <select id="role" name="role"><option value="viewer">Viewer: can read everything</option><option value="editor">Editor: can also add evidence and review leads</option></select>
+  <button name="action" value="add" class="btn primary">Share</button>
+</form>
+<p class="fine">They need an approved account. Viewers and editors see tips, including tippers' contact details. Only you can change the public profile, sharing, or delete the case.</p>
+</section>
+{% endblock %}

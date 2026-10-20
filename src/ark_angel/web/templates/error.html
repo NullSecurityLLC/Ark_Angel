@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ code }}{% endblock %}
+{% block body %}
+<section class="narrow">
+  <div class="label">Error {{ code }}</div>
+  <h1>{% if code == 429 %}Slow down a little{% elif code == 413 %}That file is too large{% else %}{{ name }}{% endif %}</h1>
+  {% if code == 429 %}<p>Too many submissions from your connection in a short time. Please try again in an hour. If someone is in danger, call 911.</p>{% endif %}
+  {% if code == 400 %}<p>The form may have expired. Go back, reload the page and try again.</p>{% endif %}
+  <p><a href="{{ url_for('public.home') }}">Back to the missing persons list</a></p>
+</section>
+{% endblock %}

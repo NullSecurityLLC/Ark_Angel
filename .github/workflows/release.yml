@@ -101,7 +101,7 @@ jobs:
           "$exe" --data-dir cases demo --out demo.html
           test -s demo.html
           "$exe" place find Boulder --state CO
-          "$exe" --data-dir cases admin users   # the panel's web extras are bundled
+          "$exe" --data-dir cases web users   # the website's web extras are bundled
       - name: Name the file for its platform
         run: |
           mkdir -p out

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Request access{% endblock %}
+{% block body %}
+<section class="narrow">
+  <div class="label">Families, investigators, search volunteers</div>
+  <h1>Request access</h1>
+  <p>An administrator reviews every request before the account can sign in, to keep case information safe.</p>
+  {% if errors %}<div class="alert" role="alert">{% for e in errors %}<p>{{ e }}</p>{% endfor %}</div>{% endif %}
+  <form method="post" action="{{ url_for('public.signup') }}" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+    <label for="username">Username</label>
+    <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required minlength="3" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{2,31}" value="{{ form.username }}">
+    <p class="fine">3-32 letters, digits, dots, dashes or underscores.</p>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="1024">
+    <label for="password2">Password again</label>
+    <input id="password2" name="password2" type="password" autocomplete="new-password" required minlength="12" maxlength="1024">
+    <p class="fine">12 characters or more. A few unrelated words works well.</p>
+    <label for="note">Who are you, and which case?</label>
+    <textarea id="note" name="note" rows="4" required minlength="20" maxlength="500" placeholder="e.g. I'm Riley's sister; Denver PD report 26-1234. Or: volunteer coordinator with a search group.">{{ form.note }}</textarea>
+    <button type="submit" class="btn primary">Request access</button>
+  </form>
+</section>
+{% endblock %}

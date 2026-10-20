@@ -1,0 +1,14 @@
+.git
+.github
+.ark_angel
+.env
+build
+dist
+*.egg-info
+__pycache__
+**/__pycache__
+tests
+docs
+packaging
+scripts
+ark_angel_demo.html

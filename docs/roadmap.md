@@ -39,9 +39,12 @@ enough to ship in a short iteration without breaking the end-to-end workflow.
 
 - [x] Mark leads verified or dismissed with notes and an audit trail; dismissed
       leads resurface on new evidence.
-- [x] Admin panel: local, login-protected web view of cases with server-side sessions,
-      lockout and a sign-in log (`ark-angel admin`).
-- Panel roles (read-only reviewers vs. admins) and two-factor sign-in.
+- [x] Website (`ark-angel web`): public missing-person profiles and tip forms, member case
+      workspaces with sharing, admin approval of accounts and every public profile, Docker + Caddy deploy.
+- Two-factor sign-in for members and admins.
+- Email notifications (new tip, account approved, profile reviewed); needs SMTP settings.
+- Printable missing-person flyer from an approved profile, with a QR code to its tip form.
+- SQLite-backed case store for very large or busy sites.
 - Free-form notes and tags on evidence items.
 - Provenance on every artifact (which tool, when, with what input).
 - Shareable exports (PDF) for partners and law enforcement.

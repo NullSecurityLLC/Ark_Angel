@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block meta %}<meta name="robots" content="index,follow">
+<meta name="description" content="Missing people, and a safe way to send what you know to the people looking for them.">{% endblock %}
+{% block title %}Missing persons{% endblock %}
+{% block body %}
+<section class="hero">
+  <div class="label">Have you seen them?</div>
+  <h1>Missing persons</h1>
+  <p class="lede">Every profile here was checked by an administrator and is linked to a police report. If you've seen someone, open their page and send a tip. You can stay anonymous.</p>
+</section>
+
+{% if profiles %}
+<ul class="cards">
+{% for c in profiles %}{% set p = c.published %}
+<li class="card">
+  <a href="{{ url_for('public.profile', slug=c.slug) }}">
+    {% if c.published_photo %}<img src="{{ url_for('public.media', name=c.published_photo) }}" alt="Photo of {{ p.name }}" loading="lazy">{% else %}<div class="nophoto" aria-hidden="true">No photo</div>{% endif %}
+    <span class="name">{{ p.name }}</span>
+    {% if p.age %}<span class="dim">Age {{ p.age }}</span>{% endif %}
+    {% if p.last_seen_place or p.last_seen_date %}<span class="seen">Last seen {{ p.last_seen_place }}{% if p.last_seen_place and p.last_seen_date %}, {% endif %}{{ p.last_seen_date }}</span>{% endif %}
+  </a>
+</li>
+{% endfor %}
+</ul>
+{% else %}
+<p class="empty">No public profiles right now.</p>
+{% endif %}
+
+<section class="aside">
+  <h2>Looking for someone?</h2>
+  <p>Families, investigators and search volunteers can <a href="{{ url_for('public.signup') }}">request an account</a> to organise tips, photos, messages and records, and see which leads agree with each other. Profiles go public only after review.</p>
+</section>
+{% endblock %}
