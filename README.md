@@ -230,12 +230,6 @@ readers (ALPR) are flagged: their operator can search plate reads for a plate in
 the case, through the investigating agency. Footage is often overwritten within
 weeks, so ask for preservation first.
 
-What it is not: it never connects to, views or scans any camera, and it doesn't
-list "open" internet cameras. Those are mostly private cameras their owners
-never meant to publish, and watching them is the unauthorized surveillance this
-project rules out. Volunteers map OSM cameras, so coverage has gaps. Walk the
-area anyway.
-
 The query sends the search circles (centre and radius) to the Overpass API and
 nothing else, but those circles are the places your case cares about. Point
 `--endpoint` at a self-hosted Overpass if that matters. Narrow it with
