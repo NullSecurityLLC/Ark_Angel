@@ -242,3 +242,11 @@ def tip_received(site, case_id: str) -> None:
             "You get at most one of these per case every 15 minutes.")
     for row in site.db.tip_recipients(case_id):
         _send(site, row["id"], row["email"], f"tip:{case_id}", TIP_WINDOW_S, _subject("New tip"), body + _footer())
+
+
+def alert_now(config: SmtpConfig, recipients: Sequence[str], subject: str, body: str) -> int:
+    """Send straight away (for the backup job, which has no web request or background mailer). Returns the count."""
+    messages = [build_message(config, to, subject, body) for to in dict.fromkeys(recipients)]
+    if messages:
+        deliver(config, messages)
+    return len(messages)

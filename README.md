@@ -274,6 +274,8 @@ Security, in brief:
 
 Optional email notifications (new account requests and profiles to review for admins; approvals and new tips for members) work with any SMTP provider. They never contain tip details, names or contact information, just a link.
 
+Nightly backups are encrypted with your own [age](https://age-encryption.org) key (the server can lock them but never open them) and copied off-site with rclone (Backblaze B2, S3, R2, SFTP...). A failed backup emails the admins, and `web restore` brings one back.
+
 Full guide, including email, backups and updates: [docs/deploy.md](docs/deploy.md).
 
 ## How leads are scored

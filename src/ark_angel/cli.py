@@ -745,8 +745,20 @@ def web_group(ctx: click.Context, db_path: str) -> None:
         from ark_angel.web.db import SiteDB
     except ImportError:
         raise click.ClickException(_WEB_MISSING)
-    store = ctx.obj
-    ctx.obj = (store, SiteDB(db_path or store.data_dir.parent / "web.db"))
+    ctx.obj = _WebContext(ctx.obj, Path(db_path) if db_path else ctx.obj.data_dir.parent / "web.db", SiteDB)
+
+
+class _WebContext:
+    """The case store plus the site database, opened on first use: the backup job only ever reads it."""
+
+    def __init__(self, store: FileCaseStore, db_path: Path, factory) -> None:
+        self.store, self.db_path, self._factory, self._db = store, db_path, factory, None
+
+    @property
+    def db(self):
+        if self._db is None:
+            self._db = self._factory(self.db_path)
+        return self._db
 
 
 def _new_password(prompt: str = "Password") -> str:
@@ -763,7 +775,7 @@ def _new_password(prompt: str = "Password") -> str:
 @click.pass_obj
 def web_create_admin(obj, username: str, email: str) -> None:
     """Create an approved admin account (asks for the password twice; 12+ characters)."""
-    _, db = obj
+    db = obj.db
     db.create_user(username, _new_password(), role="admin", status="active", email=email)
     click.echo(f"Created admin {username.strip().lower()!r}. Start the site with `ark-angel web serve`.")
 
@@ -773,7 +785,7 @@ def web_create_admin(obj, username: str, email: str) -> None:
 @click.pass_obj
 def web_users(obj, pending: bool) -> None:
     """List accounts."""
-    _, db = obj
+    db = obj.db
     rows = db.users("pending" if pending else None)
     if not rows:
         click.echo("No pending accounts." if pending else "No accounts yet. Create one with `ark-angel web create-admin`.")
@@ -787,7 +799,7 @@ def web_users(obj, pending: bool) -> None:
 @click.pass_obj
 def web_approve(obj, username: str) -> None:
     """Approve a pending account (or re-enable a disabled one)."""
-    _, db = obj
+    db = obj.db
     db.set_status(username, "active")
     click.echo(f"Approved {username.strip().lower()!r}")
 
@@ -797,7 +809,7 @@ def web_approve(obj, username: str) -> None:
 @click.pass_obj
 def web_disable(obj, username: str) -> None:
     """Disable an account and sign it out everywhere."""
-    _, db = obj
+    db = obj.db
     db.set_status(username, "disabled")
     click.echo(f"Disabled {username.strip().lower()!r}")
 
@@ -807,7 +819,7 @@ def web_disable(obj, username: str) -> None:
 @click.pass_obj
 def web_passwd(obj, username: str) -> None:
     """Set a password. Every session that user has is signed out."""
-    _, db = obj
+    db = obj.db
     db.set_password(username, _new_password("New password"))
     click.echo(f"Password changed for {username.strip().lower()!r}; all of its sessions were signed out.")
 
@@ -818,7 +830,7 @@ def web_passwd(obj, username: str) -> None:
 @click.pass_obj
 def web_delete_user(obj, username: str) -> None:
     """Delete an account (refused while it still owns cases)."""
-    _, db = obj
+    db = obj.db
     if not db.delete_user(username):
         raise click.ClickException(f"no user {username.strip().lower()!r}")
     click.echo(f"Deleted {username.strip().lower()!r}")
@@ -830,7 +842,7 @@ def web_delete_user(obj, username: str) -> None:
 @click.pass_obj
 def web_import_case(obj, case_id: str, owner: str) -> None:
     """Put a case made with the command line onto the site, owned by OWNER. Its data stays where it is."""
-    store, db = obj
+    store, db = obj.store, obj.db
     case = store.get_case(case_id)
     db.register_case(case.identifier, owner)
     click.echo(f"Case {case.identifier!r} is now on the site, owned by {owner.strip().lower()!r}.")
@@ -860,30 +872,124 @@ def web_test_email(address: str) -> None:
 
 @web_group.command("backup")
 @click.argument("dest", type=click.Path(dir_okay=False))
+@click.option("--encrypt-to", "recipient", help="Encrypt for this age public key (age1...); writes DEST.age.")
 @click.pass_obj
-def web_backup(obj, dest: str) -> None:
+def web_backup(obj, dest: str, recipient: str) -> None:
     """Write everything (site database, cases, uploads, profile photos) to one .tar.gz, safely while running."""
-    import sqlite3
-    import tarfile
-    import tempfile
-    from contextlib import closing
+    from ark_angel.web import backup
 
-    store, db = obj
-    base = store.data_dir.parent
-    with tempfile.TemporaryDirectory() as tmp:
-        snapshot = Path(tmp) / db.path.name
-        # closing(), not a bare `with`: sqlite3's own context manager only commits, and Windows can't delete the
-        # snapshot while a connection still holds it open.
-        with closing(sqlite3.connect(db.path)) as live, closing(sqlite3.connect(snapshot)) as copy:
-            live.backup(copy)  # consistent even while the site is writing
-        # Owner-only from the first byte: the archive holds tippers' contact details.
-        fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "wb") as out, tarfile.open(fileobj=out, mode="w:gz") as tar:
-            tar.add(snapshot, arcname=db.path.name)
-            for folder in (store.data_dir, base / "uploads", base / "media"):
-                if folder.exists():
-                    tar.add(folder, arcname=folder.name)
-    click.echo(f"Backed up to {dest}. It holds tips and contact details: store it encrypted.")
+    path = backup.snapshot(obj.store.data_dir, obj.db_path, Path(dest))
+    if recipient:
+        path = backup.encrypt(path, recipient)
+        click.echo(f"Backed up and encrypted to {path}. Only the matching private key can open it.")
+    else:
+        click.echo(f"Backed up to {path}. It holds tips and contact details: store it encrypted.")
+
+
+@web_group.command("backup-nightly")
+@click.option("--once", is_flag=True, help="Run one backup now and exit (non-zero on failure).")
+@click.pass_obj
+def web_backup_nightly(obj, once: bool) -> None:
+    """Back up every night: snapshot, encrypt (age), copy off-site (rclone), prune, alert on failure.
+
+    Configured with ARK_ANGEL_BACKUP_* (see docs/deploy.md). Needs only read access to the site data.
+    """
+    from datetime import datetime, timezone
+
+    from ark_angel.web import backup
+    from ark_angel.web.notify import SmtpConfig, alert_now
+
+    smtp = SmtpConfig.from_env(os.environ)
+
+    def stamp() -> str:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    def alert(subject: str, body: str) -> None:
+        if smtp is None:
+            return
+        try:
+            alert_now(smtp, backup.admin_emails(obj.db_path, smtp.admin_emails), f"[ArkAngel] {subject}", body)
+        except Exception as mail_exc:  # the alert failing mustn't hide the backup problem
+            click.echo(f"{stamp()} could not email the alert: {mail_exc.__class__.__name__}", err=True)
+
+    try:
+        config = backup.BackupConfig.from_env(os.environ)
+    except backup.BackupError as exc:
+        if once:
+            raise
+        # Don't crash-loop the container (or block the site): say so loudly, every day, until it's fixed.
+        while True:
+            click.echo(f"{stamp()} BACKUPS ARE NOT RUNNING: {exc}", err=True)
+            alert("Backups are not set up", f"Nightly backups aren't running: {exc}.\n\nUntil this is fixed, "
+                  "tips and evidence on the site have no backup. See the Backups section of docs/deploy.md.\n")
+            time.sleep(24 * 60 * 60)
+
+    def run() -> bool:
+        try:
+            out = backup.run_once(config, obj.store.data_dir, obj.db_path)
+        except Exception as exc:  # anything at all: a silent crash-loop is the one failure we can't allow
+            if not isinstance(exc, backup.BackupError):
+                exc = backup.BackupError(f"{exc.__class__.__name__}: {exc}")
+            click.echo(f"{stamp()} backup FAILED: {exc}", err=True)
+            alert("Nightly backup FAILED", f"The backup at {stamp()} failed:\n\n    {exc}\n\nThe site itself is fine, "
+                  "but new tips and evidence aren't backed up until this is fixed. Details: docker compose logs backup\n")
+            return False
+        where = f"copied to {config.dest}" if config.dest else "kept on this server only (no ARK_ANGEL_BACKUP_DEST)"
+        click.echo(f"{stamp()} backup ok: {out.name}, {where}")
+        backup.ping(config.ping_url)
+        return True
+
+    if not config.dest:
+        click.echo("Warning: no ARK_ANGEL_BACKUP_DEST, so backups stay on this server. If it dies, they die with it.",
+                   err=True)
+    if once:
+        if not run():
+            raise SystemExit(1)
+        return
+    click.echo(f"Nightly backups at {config.at} UTC" + (f" to {config.dest}" if config.dest else "") +
+               f", keeping {config.keep_days} days off-site and {config.local_keep} copies here.")
+    while True:
+        due = backup.next_run(datetime.now(timezone.utc), config.at)
+        while (wait := (due - datetime.now(timezone.utc)).total_seconds()) > 0:
+            time.sleep(min(wait, 300))
+        run()
+
+
+@web_group.command("restore")
+@click.argument("archive", type=click.Path(exists=True, dir_okay=False, allow_dash=True))
+@click.option("--force", is_flag=True, help="Move the site's current data aside (kept, not deleted) and restore.")
+@click.pass_obj
+def web_restore(obj, archive: str, force: bool) -> None:
+    """Restore a backup (.tar.gz; decrypt a .age with `age -d -i key.txt` first). Stop the site first.
+
+    ARCHIVE can be - to read it from standard input, so you can decrypt on your own computer and pipe it in:
+    age -d -i key.txt BACKUP.age | ssh SERVER 'docker compose run --rm -T app ark-angel web restore - --force'
+    """
+    import shutil
+    import tempfile
+
+    from ark_angel.web import backup
+
+    if archive == "-":
+        base = obj.store.data_dir.parent
+        base.mkdir(parents=True, exist_ok=True)
+        # Written, closed, then read back: Windows can't reopen a NamedTemporaryFile that is still open.
+        fd, spool = tempfile.mkstemp(dir=base, prefix=".restore-", suffix=".tar.gz")
+        try:
+            with os.fdopen(fd, "wb") as out:
+                shutil.copyfileobj(sys.stdin.buffer, out)
+            moved = backup.restore(Path(spool), obj.store.data_dir, obj.db_path, force=force)
+        finally:
+            Path(spool).unlink(missing_ok=True)
+        click.echo("Restored the backup from standard input." + (f" The previous data is in {moved}." if moved else ""))
+        click.echo("Start the site again to use it.")
+        return
+    if archive.endswith(".age"):
+        raise click.ClickException("decrypt it first on your own computer: age -d -i KEYFILE -o backup.tar.gz "
+                                   f"{Path(archive).name}")
+    moved = backup.restore(Path(archive), obj.store.data_dir, obj.db_path, force=force)
+    click.echo(f"Restored {Path(archive).name}." + (f" The previous data is in {moved}." if moved else ""))
+    click.echo("Start the site again to use it.")
 
 
 @web_group.command("serve")
@@ -913,7 +1019,7 @@ def web_serve(obj, host: str, port: int, allow_hosts: tuple, behind_proxy: bool,
         from ark_angel.web.app import LOCAL_HOSTS, create_app
     except ImportError:
         raise click.ClickException(_WEB_MISSING)
-    store, db = obj
+    store, db = obj.store, obj.db
     if not db.has_admin():
         if not wait_for_admin:
             raise click.ClickException("create an admin first: ark-angel web create-admin NAME")
