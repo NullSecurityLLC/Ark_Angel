@@ -10,6 +10,14 @@ services:
     environment:
       ARK_ANGEL_ALLOW_HOST: ${DOMAIN:?set DOMAIN in .env}
       ARK_ANGEL_SITE_NAME: ${SITE_NAME:-ArkAngel}
+      # Email notifications (optional; leave SMTP_HOST empty for none). See docs/deploy.md.
+      ARK_ANGEL_SMTP_HOST: ${SMTP_HOST:-}
+      ARK_ANGEL_SMTP_PORT: ${SMTP_PORT:-}
+      ARK_ANGEL_SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+      ARK_ANGEL_SMTP_USER: ${SMTP_USER:-}
+      ARK_ANGEL_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ARK_ANGEL_SMTP_FROM: ${SMTP_FROM:-}
+      ARK_ANGEL_ADMIN_EMAIL: ${ADMIN_EMAIL:-}
     volumes:
       - arkangel-data:/data
     # No "ports:" on purpose: only Caddy can reach the app, never the internet directly.

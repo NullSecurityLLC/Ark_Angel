@@ -42,7 +42,7 @@ enough to ship in a short iteration without breaking the end-to-end workflow.
 - [x] Website (`ark-angel web`): public missing-person profiles and tip forms, member case
       workspaces with sharing, admin approval of accounts and every public profile, Docker + Caddy deploy.
 - Two-factor sign-in for members and admins.
-- Email notifications (new tip, account approved, profile reviewed); needs SMTP settings.
+- [x] Email notifications (new tip, account requested/approved, profile to review/reviewed), link-only and throttled.
 - Printable missing-person flyer from an approved profile, with a QR code to its tip form.
 - SQLite-backed case store for very large or busy sites.
 - Free-form notes and tags on evidence items.

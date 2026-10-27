@@ -8,7 +8,7 @@ import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional
 
 from PIL import Image, ImageOps
 
@@ -31,8 +31,15 @@ class Site:
     store: FileCaseStore
     db: SiteDB
     base_dir: Path
+    mailer: Any = field(default=None)  # notify.Mailer, or NullMailer when email isn't configured
     _locks: dict[str, threading.Lock] = field(default_factory=dict)
     _locks_guard: threading.Lock = field(default_factory=threading.Lock)
+
+    def __post_init__(self) -> None:
+        if self.mailer is None:
+            from ark_angel.web.notify import NullMailer
+
+            self.mailer = NullMailer()
 
     @property
     def media_dir(self) -> Path:

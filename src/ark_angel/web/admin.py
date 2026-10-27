@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from flask import Blueprint, abort, g, redirect, render_template, request, send_from_directory, url_for
 
+from ark_angel.web import notify
 from ark_angel.web.app import site
 from ark_angel.web.db import DraftChanged
 
@@ -49,6 +50,8 @@ def user_action(username: str):
                                error="You can't disable, reject or demote your own account."), 400
     if action in USER_ACTIONS:
         db.set_status(username, USER_ACTIONS[action])
+        if action == "approve" and user["status"] == "pending":
+            notify.account_approved(site(), user["id"])
     elif action == "reject" and user["status"] == "pending":
         db.delete_user(username)
     elif action in ("make_admin", "make_member"):
@@ -86,6 +89,7 @@ def decide_publication(case_id: str):
             old = (db.case(case_id) or {}).get("published_photo", "")
             try:
                 db.approve_publication(case_id, version)
+                notify.profile_decided(site(), case_id, approved=True)
             except DraftChanged:
                 return render_template("admin/publications.html", requests=db.publication_requests(), notice="",
                                        error="That profile changed after you opened it, so nothing was published. "
@@ -98,6 +102,7 @@ def decide_publication(case_id: str):
                 return render_template("admin/publications.html", requests=db.publication_requests(), notice="",
                                        error="Tell the owner why (they see this note)."), 400
             db.reject_publication(case_id, note)
+            notify.profile_decided(site(), case_id, approved=False)
         else:
             abort(400)
     except ValueError:

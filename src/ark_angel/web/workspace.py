@@ -17,6 +17,7 @@ from flask import Blueprint, Response, abort, current_app, g, redirect, render_t
 
 from ark_angel.cases.store import CASE_ID_PATTERN, CaseNotFoundError
 from ark_angel.models import Case
+from ark_angel.web import notify
 from ark_angel.web.app import SESSION_COOKIE, client_ip, report_csp, site, user_agent
 from ark_angel.web.db import CASE_RANK, validate_password
 from ark_angel.web.public import TIP_SOURCE
@@ -49,6 +50,7 @@ NOTICES = {
     "unpublished": "The public profile is down.",
     "shared": "Sharing updated.",
     "signed_out_others": "Your other sessions were signed out.",
+    "email": "Email settings saved.",
 }
 
 
@@ -322,6 +324,7 @@ def profile(case_id: str):
         s.remove_photo(old_draft_photo)
     if action == "request":
         s.db.request_publication(case_id)
+        notify.profile_requested(s)
         return _back("workspace.profile", case_id, "requested")
     return _back("workspace.profile", case_id, "saved")
 
@@ -375,12 +378,28 @@ def delete_case(case_id: str):
 # Account
 
 
+def _render_account(error: str = "", email_error: str = "", notice_text: str = ""):
+    s = site()
+    page = render_template("app/account.html", sessions=s.db.sessions_for(g.session.user_id),
+                           current=g.session.token_hash, events=s.db.recent_events(20, g.session.username),
+                           user=s.db.user_by_id(g.session.user_id), email_on=s.mailer.enabled,
+                           error=error, email_error=email_error, notice=notice_text)
+    return page, 400 if error or email_error else 200
+
+
 @bp.get("/account")
 def account():
-    s = site()
-    return render_template("app/account.html", sessions=s.db.sessions_for(g.session.user_id),
-                           current=g.session.token_hash, events=s.db.recent_events(20, g.session.username),
-                           error="", notice=notice())
+    return _render_account(notice_text=notice())
+
+
+@bp.post("/account/email")
+def set_email():
+    try:
+        site().db.set_email(g.session.user_id, request.form.get("email", "")[:254],
+                            notify_tips=request.form.get("notify_tips") == "yes")
+    except ValueError as exc:
+        return _render_account(email_error=str(exc)[:1].upper() + str(exc)[1:] + ".")
+    return redirect(url_for("workspace.account", notice="email"))
 
 
 @bp.post("/account/sign-out-others")
@@ -404,9 +423,7 @@ def change_password():
         except ValueError as exc:
             error = str(exc)[:1].upper() + str(exc)[1:] + "."
     if error:
-        return render_template("app/account.html", sessions=s.db.sessions_for(g.session.user_id),
-                               current=g.session.token_hash, events=s.db.recent_events(20, g.session.username),
-                               error=error, notice=""), 400
+        return _render_account(error=error)
     s.db.set_password(g.session.username, new)
     resp = redirect(url_for("public.login", notice="reauth"))
     resp.delete_cookie(SESSION_COOKIE, path="/")

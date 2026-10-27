@@ -88,14 +88,17 @@ def user_agent() -> str:
 
 def create_app(store: FileCaseStore, db: SiteDB, base_dir: Optional[Path] = None,
                allowed_hosts: Iterable[str] = LOCAL_HOSTS, secure_cookies: bool = False,
-               site_name: str = "ArkAngel") -> Flask:
-    """Build the site. ``secure_cookies`` marks cookies HTTPS-only and turns on HSTS (use behind TLS)."""
+               site_name: str = "ArkAngel", mailer=None) -> Flask:
+    """Build the site. ``secure_cookies`` marks cookies HTTPS-only and turns on HSTS (use behind TLS).
+
+    ``mailer`` sends notifications (see :mod:`ark_angel.web.notify`); without one, no email is sent.
+    """
     from ark_angel.web import admin, public, workspace
 
     app = Flask(__name__)
     app.config.update(MAX_CONTENT_LENGTH=MAX_UPLOAD_BYTES + 1024 * 1024, TEMPLATES_AUTO_RELOAD=False,
                       SITE_NAME=site_name, SECURE_COOKIES=secure_cookies)
-    app.extensions["ark_site"] = Site(store, db, Path(base_dir) if base_dir else store.data_dir.parent)
+    app.extensions["ark_site"] = Site(store, db, Path(base_dir) if base_dir else store.data_dir.parent, mailer)
     hosts = {_host_only(h) for h in allowed_hosts}
     app.jinja_env.filters["when"] = _when
 

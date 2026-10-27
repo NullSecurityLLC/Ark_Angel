@@ -11,7 +11,7 @@
 <tbody>
 {% for u in users %}
 <tr class="{{ u.status }}">
-  <td class="mono">{{ u.username }}{% if me.user_id == u.id %} <span class="tag">you</span>{% endif %}<br><span class="dim">{{ u.created_at|when }}</span></td>
+  <td class="mono">{{ u.username }}{% if me.user_id == u.id %} <span class="tag">you</span>{% endif %}<br><span class="dim">{{ u.created_at|when }}</span>{% if u.email %}<br><span class="dim">{{ u.email }}</span>{% endif %}</td>
   <td><span class="tag{% if u.status == 'active' %} live{% elif u.status == 'pending' %} warn{% endif %}">{{ u.status }}</span></td>
   <td>{{ u.role }}</td>
   <td class="clip">{{ u.signup_note or "—" }}</td>

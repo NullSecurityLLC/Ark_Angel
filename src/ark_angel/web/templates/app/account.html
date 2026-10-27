@@ -29,6 +29,20 @@
 </section>
 
 <section>
+<h2>Email</h2>
+{% if email_error %}<p class="alert" role="alert">{{ email_error }}</p>{% endif %}
+{% if not email_on %}<p class="fine">This site hasn't set up outgoing email yet, so nothing will be sent for now.</p>{% endif %}
+<form method="post" action="{{ url_for('workspace.set_email') }}" class="stack narrow-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="email">Email address</label>
+  <input id="email" name="email" type="email" maxlength="254" autocomplete="email" value="{{ user.email }}">
+  <label class="choice"><input type="checkbox" name="notify_tips" value="yes"{% if user.notify_tips %} checked{% endif %}> Email me when a case I'm on gets a new tip (at most one per case every 15 minutes)</label>
+  <button type="submit" class="btn primary">Save</button>
+</form>
+<p class="fine">Emails only say that something happened and link here; tip details, names and contact information never go in email. Leave the address blank to get none.{% if me.is_admin %} As an admin you also get alerts about new account requests and profiles waiting for review.{% endif %}</p>
+</section>
+
+<section>
 <h2>Change password</h2>
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 <form method="post" action="{{ url_for('workspace.change_password') }}" class="stack narrow-form">

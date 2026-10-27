@@ -759,11 +759,12 @@ def _new_password(prompt: str = "Password") -> str:
 
 @web_group.command("create-admin")
 @click.argument("username")
+@click.option("--email", default="", help="Where to send admin alerts (new account requests, profiles to review).")
 @click.pass_obj
-def web_create_admin(obj, username: str) -> None:
+def web_create_admin(obj, username: str, email: str) -> None:
     """Create an approved admin account (asks for the password twice; 12+ characters)."""
     _, db = obj
-    db.create_user(username, _new_password(), role="admin", status="active")
+    db.create_user(username, _new_password(), role="admin", status="active", email=email)
     click.echo(f"Created admin {username.strip().lower()!r}. Start the site with `ark-angel web serve`.")
 
 
@@ -833,6 +834,28 @@ def web_import_case(obj, case_id: str, owner: str) -> None:
     case = store.get_case(case_id)
     db.register_case(case.identifier, owner)
     click.echo(f"Case {case.identifier!r} is now on the site, owned by {owner.strip().lower()!r}.")
+
+
+@web_group.command("test-email")
+@click.argument("address")
+def web_test_email(address: str) -> None:
+    """Send one test email using the ARK_ANGEL_SMTP_* settings, to check they work."""
+    from ark_angel.web.db import validate_email
+    from ark_angel.web.notify import SmtpConfig, build_message, deliver
+
+    config = SmtpConfig.from_env(os.environ)
+    if config is None:
+        raise click.ClickException("email isn't set up: set ARK_ANGEL_SMTP_HOST, ARK_ANGEL_SMTP_FROM and friends "
+                                   "(see docs/deploy.md)")
+    to = validate_email(address)
+    if not to:
+        raise click.ClickException("give an address to send to")
+    try:
+        deliver(config, [build_message(config, to, "ArkAngel test email",
+                                       "If you're reading this, ArkAngel can send email.\n")])
+    except Exception as exc:  # smtplib, TLS and network errors all mean "check the settings"
+        raise click.ClickException(f"sending failed via {config.host}:{config.port} ({config.security}): {exc}")
+    click.echo(f"Sent a test email to {to} via {config.host}:{config.port} ({config.security}).")
 
 
 @web_group.command("backup")
@@ -905,10 +928,15 @@ def web_serve(obj, host: str, port: int, allow_hosts: tuple, behind_proxy: bool,
             "HTTPS reverse proxy and pass --behind-proxy and --allow-host, or keep the default 127.0.0.1.")
     if behind_proxy and not allow_hosts:
         raise click.ClickException("--behind-proxy needs --allow-host with the name the proxy serves it at")
+    from ark_angel.web.notify import mailer_from_env
+
+    mailer = mailer_from_env(os.environ)
     app = create_app(store, db, allowed_hosts=(*LOCAL_HOSTS, *allow_hosts), secure_cookies=behind_proxy,
-                     site_name=site_name)
+                     site_name=site_name, mailer=mailer)
     shown = f"[{host}]" if ":" in host else host
     click.echo(f"{site_name} website on http://{shown}:{port}/" + (" (behind your HTTPS proxy)" if behind_proxy else ""))
+    click.echo(f"Email notifications: on, via {mailer.config.host}:{mailer.config.port}" if mailer.enabled
+               else "Email notifications: off (set ARK_ANGEL_SMTP_HOST to turn them on)")
     click.echo("Ctrl+C to stop.")
     proxy = {"trusted_proxy": proxy_ip, "trusted_proxy_count": 1,
              "trusted_proxy_headers": {"x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"}} \
