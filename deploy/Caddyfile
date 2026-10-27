@@ -1,0 +1,14 @@
+# Caddy gets and renews the HTTPS certificate for {$DOMAIN} by itself.
+# For expiry notices from Let's Encrypt, add a global block at the top:
+#   {
+#       email you@example.org
+#   }
+
+{$DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 30MB
+	}
+	reverse_proxy app:8765
+	header -Server
+}

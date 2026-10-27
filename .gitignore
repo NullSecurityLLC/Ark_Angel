@@ -4,3 +4,4 @@ __pycache__/
 .ark_angel/
 ark_angel_demo.html
 build/
+.env

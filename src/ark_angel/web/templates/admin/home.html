@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block body %}
+{% include "admin/_nav.html" %}
+<h1>Overview</h1>
+<div class="tiles">
+  <a class="tile{% if pending %} hot{% endif %}" href="{{ url_for('admin.users') }}"><span class="label">Waiting for approval</span><span class="value">{{ pending|length }}</span><span class="dim">account requests</span></a>
+  <a class="tile{% if requests %} hot{% endif %}" href="{{ url_for('admin.publications') }}"><span class="label">Profiles to review</span><span class="value">{{ requests|length }}</span><span class="dim">waiting to go public</span></a>
+  <div class="tile"><span class="label">Site</span><span class="value">{{ live }}</span><span class="dim">live profiles · {{ cases }} cases · {{ users }} accounts</span></div>
+</div>
+{% if pending %}
+<section>
+<h2>Newest account requests</h2>
+<ul class="plain">{% for u in pending[:5] %}<li><b class="mono">{{ u.username }}</b> <span class="dim">{{ u.created_at|when }}</span><br>{{ u.signup_note }}</li>{% endfor %}</ul>
+<p><a href="{{ url_for('admin.users') }}">Review them</a></p>
+</section>
+{% endif %}
+{% endblock %}

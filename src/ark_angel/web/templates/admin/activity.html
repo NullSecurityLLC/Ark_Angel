@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Sign-in log · Admin{% endblock %}
+{% block body %}
+{% include "admin/_nav.html" %}
+<h1>Sign-in log</h1>
+{% if events %}
+<div class="table-wrap"><table>
+<thead><tr><th>When</th><th>Username</th><th>Outcome</th><th>Address</th><th>Browser</th></tr></thead>
+<tbody>
+{% for e in events %}
+<tr class="ev-{{ e.outcome }}">
+  <td class="mono">{{ e.at|when }}</td>
+  <td class="mono">{{ e.username }}</td>
+  <td><span class="tag">{{ e.outcome|replace("_", " ") }}</span></td>
+  <td class="mono">{{ e.ip }}</td>
+  <td class="clip">{{ e.user_agent or "—" }}</td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+<p class="fine">Five failed sign-ins for one username, or twenty from one address, lock it for 15 minutes. Kept for 90 days.</p>
+{% else %}<p class="empty">No sign-in activity yet.</p>{% endif %}
+{% endblock %}

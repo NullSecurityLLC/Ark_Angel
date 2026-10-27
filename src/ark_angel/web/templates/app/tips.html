@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Tips · {{ g.case.title }}{% endblock %}
+{% block body %}
+{% include "app/_case_nav.html" %}
+<p class="fine">Tips sent through the public profile, newest first. Contact details are only ever shown here, to the case team. Each tip is already in the analysis.</p>
+{% if tips %}
+<ol class="tips">
+{% for t in tips %}{% set m = t.metadata or {} %}
+<li class="tip-card">
+  <div class="tip-head"><span class="mono dim">{{ m.received_at or m.timestamp }}</span><span class="mono dim">{{ t.identifier }}</span></div>
+  <p class="tip-text">{{ t.content }}</p>
+  {% if m.photo %}<p><a href="{{ url_for('workspace.evidence_file', case_id=g.case.identifier, name=m.photo) }}">View attached photo</a></p>{% endif %}
+  {% if m.contact %}
+  <p class="contact">Contact: {% for k, v in m.contact.items() %}<span>{{ k }}: {{ v }}</span>{% endfor %}</p>
+  {% else %}<p class="dim">Anonymous</p>{% endif %}
+</li>
+{% endfor %}
+</ol>
+{% else %}
+<p class="empty">No website tips yet.{% if not g.meta.published %} Tips arrive once the case has a live public profile.{% endif %}</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Request received{% endblock %}
+{% block body %}
+<section class="narrow">
+  <div class="label">Request received</div>
+  <h1>Thanks, we'll take a look</h1>
+  <p>An administrator will review your request. Once it's approved you can <a href="{{ url_for('public.login') }}">sign in</a> with the username and password you chose.</p>
+</section>
+{% endblock %}

@@ -1,0 +1,46 @@
+# ArkAngel website + Caddy (automatic HTTPS). Copy .env.example to .env, set DOMAIN, then:
+#   docker compose up -d --build
+#   docker compose run --rm app ark-angel web create-admin YOURNAME
+# Full guide: docs/deploy.md
+services:
+  app:
+    build: .
+    image: ark-angel-web:latest
+    restart: unless-stopped
+    environment:
+      ARK_ANGEL_ALLOW_HOST: ${DOMAIN:?set DOMAIN in .env}
+      ARK_ANGEL_SITE_NAME: ${SITE_NAME:-ArkAngel}
+    volumes:
+      - arkangel-data:/data
+    # No "ports:" on purpose: only Caddy can reach the app, never the internet directly.
+    expose:
+      - "8765"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  caddy:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  arkangel-data:
+  caddy-data:
+  caddy-config:

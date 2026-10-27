@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Public profile · {{ g.case.title }}{% endblock %}
+{% block body %}
+{% include "app/_case_nav.html" %}
+{% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+{% if errors %}<div class="alert" role="alert">{% for e in errors %}<p>{{ e }}</p>{% endfor %}</div>{% endif %}
+
+<div class="status-box">
+  {% if meta.published %}
+  <p><span class="tag live">live</span> Public at <a href="{{ url_for('public.profile', slug=meta.slug) }}">{{ url_for('public.profile', slug=meta.slug, _external=True) }}</a>, approved {{ meta.published_at|when }}.</p>
+  {% else %}
+  <p><span class="tag">private</span> Not public.</p>
+  {% endif %}
+  {% if meta.draft_state == 'requested' %}
+  <p><span class="tag">in review</span> Your latest version is waiting for an administrator.{% if meta.published %} Visitors still see the approved version until then.{% endif %} Saving any change withdraws the request; send it again when you're done.</p>
+  {% elif meta.draft_state == 'rejected' %}
+  <p class="alert">Sent back by an administrator: {{ meta.review_note }}</p>
+  {% endif %}
+  <div class="actions">
+    {% if meta.draft_state == 'requested' %}
+    <form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button name="action" value="withdraw" class="btn small ghost">Withdraw request</button></form>
+    {% endif %}
+    {% if meta.published %}
+    <form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button name="action" value="unpublish" class="btn small danger">Found, or take it down now</button></form>
+    {% endif %}
+  </div>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="stack narrow-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="name">Name</label>
+  <input id="name" name="name" maxlength="80" value="{{ form.name or '' }}">
+  <div class="row">
+    <div><label for="age">Age</label><input id="age" name="age" maxlength="20" value="{{ form.age or '' }}"></div>
+    <div><label for="last_seen_date">Last seen (date)</label><input id="last_seen_date" name="last_seen_date" maxlength="60" placeholder="e.g. 28 September 2026" value="{{ form.last_seen_date or '' }}"></div>
+  </div>
+  <label for="last_seen_place">Last seen (place)</label>
+  <input id="last_seen_place" name="last_seen_place" maxlength="160" placeholder="e.g. Union Station, Denver, CO" value="{{ form.last_seen_place or '' }}">
+  <label for="description">Description</label>
+  <textarea id="description" name="description" rows="6" maxlength="2000" placeholder="Height, hair, clothing when last seen, anything distinctive. Nothing that would put them at risk.">{{ form.description or '' }}</textarea>
+  <label for="contact">Public contact line</label>
+  <input id="contact" name="contact" maxlength="240" placeholder="e.g. Denver PD Missing Persons: 720-555-0100, case 26-1234" value="{{ form.contact or '' }}">
+  <p class="fine">Shown on the profile. A police line is safest; avoid personal numbers.</p>
+  <label for="photo">Photo</label>
+  {% if meta.draft_photo %}<p><img class="thumb" src="{{ url_for('workspace.draft_photo', case_id=g.case.identifier) }}" alt="Current photo"></p>{% endif %}
+  <input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp">
+  <p class="fine">Location and other hidden data are removed before anyone sees it.</p>
+
+  <fieldset>
+    <legend>For the reviewer (not public)</legend>
+    <label for="police_report">Police report</label>
+    <input id="police_report" name="police_report" maxlength="160" placeholder="Agency and report number" value="{{ form.police_report or '' }}">
+    <label class="choice"><input type="checkbox" name="attest" value="yes"{% if form.attest %} checked{% endif %}> I'm family of this person or acting for them, they have been reported missing to police, and I have the right to share this photo and information.</label>
+  </fieldset>
+  <p class="fine">Every profile is checked by an administrator before it goes public, and again after any change. This stops people from posting fake "missing" profiles to find someone who left to get safe.</p>
+  <div class="actions">
+    <button name="action" value="save" class="btn">Save draft</button>
+    <button name="action" value="request" class="btn primary">Save and send for review</button>
+  </div>
+</form>
+{% endblock %}
