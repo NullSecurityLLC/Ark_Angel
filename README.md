@@ -272,7 +272,9 @@ Security, in brief:
 - Pages run no JavaScript and carry a strict Content-Security-Policy.
 - The container runs unprivileged on a read-only filesystem.
 
-Full guide, including backups and updates: [docs/deploy.md](docs/deploy.md).
+Optional email notifications (new account requests and profiles to review for admins; approvals and new tips for members) work with any SMTP provider. They never contain tip details, names or contact information, just a link.
+
+Full guide, including email, backups and updates: [docs/deploy.md](docs/deploy.md).
 
 ## How leads are scored
 

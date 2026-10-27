@@ -45,6 +45,8 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
   - `db.py`: SQLite storage for everything about people. It holds accounts (scrypt hashes, a role, and a pending, active or disabled status), server-side sessions (tokens stored as SHA-256) and the sign-in log that drives lockout. It also records case ownership and sharing (owner, editor or viewer), each public profile's draft and approved copies, and rate-limit events keyed by an HMAC of the address.
   - `app.py`: one request hook enforces access by area, CSRF, Origin and Host on every route; another sets the security headers.
   - `public.py`, `workspace.py` and `admin.py` are the three areas.
+  - `notify.py`: email notifications over SMTP (TLS required) from a background thread, throttled per person;
+    messages carry links only, never case content.
   - `site.py`: per-case write locks, upload storage and image handling. Uploads are validated by Pillow with a pixel cap; profile photos are re-encoded without metadata.
   - Case evidence stays in `FileCaseStore` and goes through the same pipeline and report builders as the CLI.
   - Deployment: `Dockerfile`, `compose.yaml` and `deploy/Caddyfile`; see `docs/deploy.md`.

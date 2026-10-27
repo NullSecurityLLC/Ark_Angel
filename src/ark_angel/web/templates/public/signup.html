@@ -17,6 +17,9 @@
     <label for="password2">Password again</label>
     <input id="password2" name="password2" type="password" autocomplete="new-password" required minlength="12" maxlength="1024">
     <p class="fine">12 characters or more. A few unrelated words works well.</p>
+    <label for="email">Email (optional)</label>
+    <input id="email" name="email" type="email" maxlength="254" autocomplete="email" value="{{ form.email }}">
+    <p class="fine">Only for telling you when your account is approved, and later about new tips on your cases. Never shown to anyone but administrators.</p>
     <label for="note">Who are you, and which case?</label>
     <textarea id="note" name="note" rows="4" required minlength="20" maxlength="500" placeholder="e.g. I'm Riley's sister; Denver PD report 26-1234. Or: volunteer coordinator with a search group.">{{ form.note }}</textarea>
     <button type="submit" class="btn primary">Request access</button>

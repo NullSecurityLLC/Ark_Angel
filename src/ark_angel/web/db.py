@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT NOT NULL CHECK (role IN ('admin', 'member')),
     status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'disabled')),
     signup_note TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    notify_tips INTEGER NOT NULL DEFAULT 1,
     created_at REAL NOT NULL,
     password_changed_at REAL NOT NULL
 );
@@ -113,6 +115,12 @@ CREATE TABLE IF NOT EXISTS public_events (
     ip_hash TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS public_events_key ON public_events (kind, ip_hash, at);
+CREATE TABLE IF NOT EXISTS notifications (
+    user_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    last_sent REAL NOT NULL,
+    PRIMARY KEY (user_id, key)
+);
 """
 
 # Checked against when the username doesn't exist, so a miss takes as long as a wrong password.
@@ -168,6 +176,21 @@ def validate_username(username: str) -> str:
     return name
 
 
+# Deliberately plain: one @, no spaces or control characters, a dot in the domain. It only has to stop junk
+# and header tricks; the address is proven by mail actually arriving.
+_EMAIL_PATTERN = re.compile(r"^[^@\s\x00-\x1f\x7f<>,;\"]{1,64}@[^@\s\x00-\x1f\x7f<>,;\"]{1,189}\.[^@\s\x00-\x1f\x7f<>,;\".]{2,63}$")
+
+
+def validate_email(email: str) -> str:
+    """A cleaned email address, or ``""`` for none. Raises ValueError for something that isn't one."""
+    email = email.strip()
+    if not email:
+        return ""
+    if len(email) > 254 or not _EMAIL_PATTERN.match(email):
+        raise ValueError("that doesn't look like an email address")
+    return email
+
+
 def validate_password(password: str) -> None:
     if len(password) < MIN_PASSWORD:
         raise ValueError(f"password must be at least {MIN_PASSWORD} characters")
@@ -205,6 +228,10 @@ class SiteDB:
             columns = {row[1] for row in db.execute("PRAGMA table_info(cases)")}
             if "draft_version" not in columns:  # databases made before approvals were version-bound
                 db.execute("ALTER TABLE cases ADD COLUMN draft_version INTEGER NOT NULL DEFAULT 0")
+            user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
+            if "email" not in user_columns:  # databases made before email notifications
+                db.execute("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''")
+                db.execute("ALTER TABLE users ADD COLUMN notify_tips INTEGER NOT NULL DEFAULT 1")
             db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('secret', ?)", (secrets.token_hex(32),))
             self._secret = db.execute("SELECT value FROM settings WHERE key = 'secret'").fetchone()[0].encode()
 
@@ -222,33 +249,34 @@ class SiteDB:
     # Accounts
 
     def create_user(self, username: str, password: str, role: str = "member", status: str = "pending",
-                    note: str = "") -> int:
+                    note: str = "", email: str = "") -> int:
         name = validate_username(username)
         validate_password(password)
+        email = validate_email(email)
         if role not in ROLES or status not in STATUSES:
             raise ValueError("bad role or status")
         now = self.clock()
         try:
             with self._connect() as db:
                 cur = db.execute(
-                    "INSERT INTO users (username, password_hash, role, status, signup_note, created_at, "
-                    "password_changed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (name, generate_password_hash(password), role, status, note[:500], now, now))
+                    "INSERT INTO users (username, password_hash, role, status, signup_note, email, created_at, "
+                    "password_changed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (name, generate_password_hash(password), role, status, note[:500], email, now, now))
         except sqlite3.IntegrityError:
             raise ValueError(f"user {name!r} already exists") from None
         return int(cur.lastrowid)
 
     def user(self, username: str) -> Optional[sqlite3.Row]:
         with self._connect() as db:
-            return db.execute("SELECT id, username, role, status, signup_note, created_at FROM users "
+            return db.execute("SELECT id, username, role, status, signup_note, email, notify_tips, created_at FROM users "
                               "WHERE username = ?", (normalize_username(username),)).fetchone()
 
     def users(self, status: Optional[str] = None) -> list[sqlite3.Row]:
         with self._connect() as db:
             if status:
-                return db.execute("SELECT id, username, role, status, signup_note, created_at FROM users "
+                return db.execute("SELECT id, username, role, status, signup_note, email, notify_tips, created_at FROM users "
                                   "WHERE status = ? ORDER BY created_at", (status,)).fetchall()
-            return db.execute("SELECT id, username, role, status, signup_note, created_at FROM users "
+            return db.execute("SELECT id, username, role, status, signup_note, email, notify_tips, created_at FROM users "
                               "ORDER BY status = 'pending' DESC, username").fetchall()
 
     def usernames(self) -> list[str]:
@@ -257,6 +285,47 @@ class SiteDB:
     def has_admin(self) -> bool:
         with self._connect() as db:
             return db.execute("SELECT 1 FROM users WHERE role = 'admin' AND status = 'active'").fetchone() is not None
+
+    def user_by_id(self, user_id: int) -> Optional[sqlite3.Row]:
+        with self._connect() as db:
+            return db.execute("SELECT id, username, role, status, signup_note, email, notify_tips, created_at "
+                              "FROM users WHERE id = ?", (user_id,)).fetchone()
+
+    def set_email(self, user_id: int, email: str, notify_tips: bool = True) -> None:
+        with self._connect() as db:
+            db.execute("UPDATE users SET email = ?, notify_tips = ? WHERE id = ?",
+                       (validate_email(email), int(bool(notify_tips)), user_id))
+
+    def admin_recipients(self) -> list[sqlite3.Row]:
+        """Active admins who gave an email address."""
+        with self._connect() as db:
+            return db.execute("SELECT id, username, email FROM users WHERE role = 'admin' AND status = 'active' "
+                              "AND email != ''").fetchall()
+
+    def tip_recipients(self, case_id: str) -> list[sqlite3.Row]:
+        """Active members of a case who gave an email address and want tip emails."""
+        with self._connect() as db:
+            return db.execute("SELECT u.id, u.username, u.email FROM case_members m JOIN users u ON u.id = m.user_id "
+                              "WHERE m.case_id = ? AND u.status = 'active' AND u.email != '' AND u.notify_tips = 1",
+                              (case_id,)).fetchall()
+
+    def case_owner(self, case_id: str) -> Optional[sqlite3.Row]:
+        with self._connect() as db:
+            return db.execute("SELECT u.id, u.username, u.email, u.status FROM case_members m "
+                              "JOIN users u ON u.id = m.user_id WHERE m.case_id = ? AND m.role = 'owner'",
+                              (case_id,)).fetchone()
+
+    def claim_notification(self, user_id: int, key: str, window_s: float) -> bool:
+        """True (and recorded) if ``user_id`` hasn't been sent ``key`` within the window: the email throttle."""
+        now = self.clock()
+        with self._connect() as db:
+            row = db.execute("SELECT last_sent FROM notifications WHERE user_id = ? AND key = ?",
+                             (user_id, key)).fetchone()
+            if row is not None and now - row["last_sent"] < window_s:
+                return False
+            db.execute("INSERT INTO notifications (user_id, key, last_sent) VALUES (?, ?, ?) "
+                       "ON CONFLICT (user_id, key) DO UPDATE SET last_sent = excluded.last_sent", (user_id, key, now))
+        return True
 
     def set_password(self, username: str, password: str) -> None:
         """Change a password and end every session that user has."""

@@ -45,6 +45,33 @@ docker compose run --rm app ark-angel web disable USERNAME
 docker compose run --rm app ark-angel web passwd USERNAME    # also signs them out everywhere
 ```
 
+## Email notifications
+
+Optional, but without it nobody hears about new account requests, profiles waiting for review, or new tips
+unless they go and look. Fill in the `SMTP_*` lines in `.env` with any email provider's SMTP settings
+(Postmark, Mailgun, Amazon SES, Fastmail, Google Workspace...). Then:
+
+```bash
+docker compose up -d                                              # restart with the new settings
+docker compose run --rm app ark-angel web test-email you@example.org
+```
+
+Admins get alerts at the address on their account (set it on the **Account** page, or with
+`web create-admin NAME --email ...`), plus any address in `ADMIN_EMAIL`. Members set their own address and
+can turn tip emails off.
+
+| Who | Gets an email when | Throttle |
+|---|---|---|
+| Admins | someone requests an account; a profile is waiting for review | at most one of each kind per 10 minutes |
+| A new member | their account is approved | |
+| A case owner | their profile is approved or sent back | |
+| Everyone on a case | a tip arrives (unless they turned it off) | at most one per case per 15 minutes |
+
+**No email contains tip text, tippers' contact details, names or case titles**: only that something happened,
+and a link to the page behind the sign-in. Email passes through providers and shows on lock screens. Mail goes
+out in the background, so a slow mail server never holds up a tip. TLS is required (STARTTLS on 587 or TLS on
+465, with the certificate checked); plain SMTP is only accepted for a relay on the same machine.
+
 ## Backups
 
 Everything lives in the `arkangel-data` volume: the site database, case evidence, uploaded files and profile photos.

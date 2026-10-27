@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, abort, current_app, g, redirect, render_template, request, send_from_directory, url_for
 
 from ark_angel.models import Evidence
+from ark_angel.web import notify
 from ark_angel.web.app import client_ip, safe_next, site, user_agent
 from ark_angel.web.db import AuthError
 from ark_angel.web.site import UploadError, save_evidence_photo
@@ -100,6 +101,7 @@ def submit_tip(slug: str):
             except UploadError as exc:
                 return render_template("public/profile.html", case=case, errors=[str(exc)], form=form), 400
         _add_tip(case_id, form, photo_path)
+    notify.tip_received(s, case_id)
     return redirect(url_for("public.thanks", slug=slug))
 
 
@@ -145,7 +147,8 @@ def thanks(slug: str):
 def signup():
     if g.session is not None:
         return redirect(url_for("workspace.cases"))
-    form = {"username": request.form.get("username", "").strip()[:64], "note": request.form.get("note", "").strip()}
+    form = {"username": request.form.get("username", "").strip()[:64], "note": request.form.get("note", "").strip(),
+            "email": request.form.get("email", "").strip()[:254]}
     errors = []
     if request.method == "POST":
         if request.form.get("website"):
@@ -160,12 +163,13 @@ def signup():
             if len(db.users("pending")) >= MAX_PENDING_SIGNUPS or not db.allow("signup", client_ip(), *SIGNUP_LIMIT):
                 abort(429)
             try:
-                db.create_user(form["username"], password, note=form["note"][:500])
+                db.create_user(form["username"], password, note=form["note"][:500], email=form["email"])
             except ValueError as exc:
                 message = str(exc)
                 errors.append("That username is taken." if "already exists" in message
                               else message[:1].upper() + message[1:] + ".")
             else:
+                notify.account_requested(site())
                 return render_template("public/signup_done.html")
     return render_template("public/signup.html", errors=errors, form=form), 400 if errors else 200
 
