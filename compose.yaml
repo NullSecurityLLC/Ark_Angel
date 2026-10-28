@@ -31,6 +31,44 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # Nightly encrypted off-site backups (docs/deploy.md). Reads the site data read-only.
+  backup:
+    image: ark-angel-web:latest
+    restart: unless-stopped
+    depends_on:
+      - app
+    command: ["ark-angel", "web", "backup-nightly"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ARK_ANGEL_BACKUP_DIR: /backups
+      ARK_ANGEL_SMTP_HOST: ${SMTP_HOST:-}
+      ARK_ANGEL_SMTP_PORT: ${SMTP_PORT:-}
+      ARK_ANGEL_SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+      ARK_ANGEL_SMTP_USER: ${SMTP_USER:-}
+      ARK_ANGEL_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ARK_ANGEL_SMTP_FROM: ${SMTP_FROM:-}
+      ARK_ANGEL_ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ARK_ANGEL_BACKUP_RECIPIENT: ${BACKUP_RECIPIENT:-}
+      ARK_ANGEL_BACKUP_DEST: ${BACKUP_DEST:-}
+      ARK_ANGEL_BACKUP_AT: ${BACKUP_AT:-03:15}
+      ARK_ANGEL_BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+      ARK_ANGEL_BACKUP_PING_URL: ${BACKUP_PING_URL:-}
+      RCLONE_CONFIG: /backups/.rclone-unused.conf  # remotes come from RCLONE_CONFIG_* variables in .env
+    volumes:
+      - arkangel-data:/data:ro
+      - arkangel-backups:/backups
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      disable: true
+
   caddy:
     image: caddy:2.8.4
     restart: unless-stopped
@@ -50,5 +88,6 @@ services:
 
 volumes:
   arkangel-data:
+  arkangel-backups:
   caddy-data:
   caddy-config:

@@ -47,6 +47,8 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
   - `public.py`, `workspace.py` and `admin.py` are the three areas.
   - `notify.py`: email notifications over SMTP (TLS required) from a background thread, throttled per person;
     messages carry links only, never case content.
+  - `backup.py`: read-only snapshot, age encryption, rclone upload and pruning, and a restore that
+    validates every archive entry before touching live data. Run nightly by the `backup` Compose service.
   - `site.py`: per-case write locks, upload storage and image handling. Uploads are validated by Pillow with a pixel cap; profile photos are re-encoded without metadata.
   - Case evidence stays in `FileCaseStore` and goes through the same pipeline and report builders as the CLI.
   - Deployment: `Dockerfile`, `compose.yaml` and `deploy/Caddyfile`; see `docs/deploy.md`.

@@ -44,6 +44,7 @@ enough to ship in a short iteration without breaking the end-to-end workflow.
 - Two-factor sign-in for members and admins.
 - [x] Email notifications (new tip, account requested/approved, profile to review/reviewed), link-only and throttled.
 - Printable missing-person flyer from an approved profile, with a QR code to its tip form.
+- [x] Nightly encrypted (age) off-site (rclone) backups with failure alerts, and `web restore`.
 - SQLite-backed case store for very large or busy sites.
 - Free-form notes and tags on evidence items.
 - Provenance on every artifact (which tool, when, with what input).

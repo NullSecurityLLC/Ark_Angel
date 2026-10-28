@@ -7,6 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     ARK_ANGEL_DATA_DIR=/data/cases
 
+# age encrypts backups, rclone copies them off-site (the backup service in compose.yaml).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends age rclone ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /build
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
@@ -14,7 +19,7 @@ RUN pip install ".[web]" && rm -rf /build
 
 # Run as an unprivileged user that owns only /data.
 RUN useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin arkangel \
-    && mkdir -p /data && chown arkangel:arkangel /data
+    && mkdir -p /data /backups && chown arkangel:arkangel /data /backups
 USER arkangel
 WORKDIR /data
 VOLUME /data

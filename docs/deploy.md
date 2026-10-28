@@ -74,15 +74,67 @@ out in the background, so a slow mail server never holds up a tip. TLS is requir
 
 ## Backups
 
-Everything lives in the `arkangel-data` volume: the site database, case evidence, uploaded files and profile photos.
+The `backup` service backs everything up every night at 03:15 UTC: the site database, case evidence,
+uploaded files and profile photos. It encrypts the backup, copies it off the server, and keeps 30 days
+there and the last 7 copies on the server. It mounts the site's data read-only.
+
+**1. Make a key, on your own computer, not the server.** Install [age](https://age-encryption.org), then:
 
 ```bash
-docker compose exec app ark-angel web backup /data/backup.tar.gz
-docker compose cp app:/data/backup.tar.gz ./arkangel-$(date +%F).tar.gz
-docker compose exec app rm /data/backup.tar.gz
+age-keygen -o arkangel-backup-key.txt
 ```
 
-The backup is consistent even while the site is in use. **It contains tips and tipsters' contact details: keep it encrypted and off shared drives.** To restore one, stop the stack, unpack it into a fresh `arkangel-data` volume (`web.db`, `cases/`, `uploads/` and `media/` at the volume root), and start again.
+It prints a `Public key: age1...`. Put that in `.env` as `BACKUP_RECIPIENT`. Keep
+`arkangel-backup-key.txt` somewhere safe and **off the server**, such as a password manager or an encrypted
+USB stick, ideally in two places. The server can only lock backups, never open them, so neither the storage
+company nor someone who breaks into the server can read them. **Lose the key and no one can open the
+backups, including you.**
+
+**2. Pick where they go.** Any [rclone](https://rclone.org/overview/) remote works. Set it up with
+`RCLONE_CONFIG_<NAME>_*` lines in `.env` and point `BACKUP_DEST` at it. Backblaze B2, for example (create
+a bucket and an application key limited to it):
+
+```bash
+BACKUP_DEST=offsite:my-arkangel-backups/nightly
+RCLONE_CONFIG_OFFSITE_TYPE=b2
+RCLONE_CONFIG_OFFSITE_ACCOUNT=<keyID>
+RCLONE_CONFIG_OFFSITE_KEY=<applicationKey>
+```
+
+S3, Cloudflare R2 (`TYPE=s3`, `PROVIDER=Cloudflare`), Wasabi and SFTP work the same way. Use a backend that
+logs in with a key. OAuth ones like Google Drive need a token the read-only container can't save.
+
+**3. Turn it on and test it:**
+
+```bash
+docker compose up -d
+docker compose exec backup ark-angel web backup-nightly --once     # one backup now
+docker compose logs backup                                         # "backup ok: ... copied to offsite:..."
+```
+
+If a backup fails, the admins get an email (set up email notifications first). For a dead man's switch, set
+`BACKUP_PING_URL` to a [healthchecks.io](https://healthchecks.io) check URL. It's hit after every good
+backup, and healthchecks emails you if a day goes by without one, even if the whole server is down. Until
+`BACKUP_RECIPIENT` is set, the backup service logs a warning and emails the admins every day. The site
+itself runs either way.
+
+### Restoring
+
+Do a practice restore once, before you need it. On your own computer, download a backup from your storage
+(or `docker compose cp backup:/backups/<file> .`). Then decrypt it and pipe it into the server:
+
+```bash
+ssh you@server 'cd Ark_Angel && docker compose stop app'
+age -d -i arkangel-backup-key.txt arkangel-20261027-031500.tar.gz.age \
+  | ssh you@server 'cd Ark_Angel && docker compose run --rm -T app ark-angel web restore - --force'
+ssh you@server 'cd Ark_Angel && docker compose start app'
+```
+
+The key never leaves your computer. The site's current data isn't deleted: it's moved to
+`/data/pre-restore-<time>/` in the data volume. `web restore` checks every file in the archive first and
+refuses anything that would land outside the data folder.
+
+For a one-off copy by hand: `docker compose exec app ark-angel web backup /data/manual.tar.gz --encrypt-to age1...`.
 
 ## Updating
 
