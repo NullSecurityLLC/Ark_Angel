@@ -284,6 +284,9 @@ def _profile_form() -> dict:
 def profile(case_id: str):
     s = site()
     meta = g.meta
+    if g.case.principal is not None:
+        # A defender case protects someone; a public page about them is the exposure it exists to prevent.
+        abort(403)
     if request.method == "GET":
         return render_template("app/profile.html", meta=meta, form=meta["draft"], errors=[], notice=notice())
     action = request.form.get("action", "save")

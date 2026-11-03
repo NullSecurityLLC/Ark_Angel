@@ -131,6 +131,41 @@ class Review:
 
 
 @dataclass
+class Principal:
+    """The person a principal-defender case protects.
+
+    A defender case turns the engine around: instead of finding someone, it
+    shows how findable the principal is and who is threatening them.
+
+    Attributes:
+        name: The principal's name as it appears in evidence.
+        aliases: Other names they go by (maiden name, nickname, initials).
+        phones: Their phone numbers, normalized to digits.
+        emails: Their email addresses, lowercased.
+        handles: Their social handles, lowercased without ``@``.
+        plates: Their vehicles' plates, normalized.
+        places: Sensitive places (home, work, school, a gym) that must not
+            leak. The name is only a label; the aliases (a street address, a
+            building name) are what's searched for in evidence. Geotagged
+            evidence inside the radius counts too.
+        authorized_by: Who authorized protecting this person and how, e.g.
+            "the principal, signed engagement 2026-10-12". Required: defender
+            mode exists for people who asked for protection.
+        created_at: ISO-8601 timestamp of when the profile was set up.
+    """
+
+    name: str
+    authorized_by: str
+    aliases: List[str] = field(default_factory=list)
+    phones: List[str] = field(default_factory=list)
+    emails: List[str] = field(default_factory=list)
+    handles: List[str] = field(default_factory=list)
+    plates: List[str] = field(default_factory=list)
+    places: List[Place] = field(default_factory=list)
+    created_at: str = ""
+
+
+@dataclass
 class Case:
     """A case aggregates leads and evidence for an investigation.
 
@@ -142,6 +177,8 @@ class Case:
         places: The case's gazetteer of named locations.
         reviews: Investigator decisions on leads, oldest first.
         created_at: Timestamp indicating when the case was opened.
+        principal: Set on principal-defender cases: the person being protected.
+            ``None`` for ordinary missing-person cases.
     """
 
     identifier: str
@@ -151,3 +188,17 @@ class Case:
     created_at: datetime = field(default_factory=_utcnow)
     places: List[Place] = field(default_factory=list)
     reviews: List[Review] = field(default_factory=list)
+    principal: Optional[Principal] = None
+
+    @property
+    def defending(self) -> bool:
+        """True for a principal-defender case."""
+        return self.principal is not None
+
+    def known_places(self) -> List[Place]:
+        """The case's places plus, on a defender case, the principal's sensitive places.
+
+        For filtering place suggestions only: sensitive places stay out of the
+        gazetteer that reports and maps are built from.
+        """
+        return list(self.places) + (list(self.principal.places) if self.principal else [])

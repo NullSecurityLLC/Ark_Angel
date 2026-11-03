@@ -15,7 +15,7 @@ from ark_angel.ingest.email_source import EmailImport, EmailSource
 from ark_angel.ingest.file_source import FileIngestionSource
 from ark_angel.ingest.image_source import ImageIngestionSource
 from ark_angel.ingest.username_source import UsernameHit, hit_records
-from ark_angel.models import Evidence, Lead, Place, Review
+from ark_angel.models import Case, Evidence, Lead, Place, Principal, Review
 from ark_angel.review import RankedLead, make_review, resolve_lead
 
 
@@ -54,8 +54,15 @@ def enrich(store: FileCaseStore, case_id: str) -> tuple[list[Lead], CaseAnalysis
     recomputed from scratch so running this twice never duplicates anything.
     """
     case = store.get_case(case_id)
-    analysis = analyze_case(case.evidence, places=case.places)
-    new_leads = analysis.leads + list(RuleBasedAnalyzer().analyze_evidence(case, case.evidence))
+    if case.principal is not None:
+        # Principal-defender case: exposures, pattern of life and threats instead of find-them leads.
+        from ark_angel.analysis.defend import analyze_principal
+
+        defended = analyze_principal(case.principal, case.evidence, case.places)
+        analysis, new_leads = defended.correlation, defended.leads
+    else:
+        analysis = analyze_case(case.evidence, places=case.places)
+        new_leads = analysis.leads + list(RuleBasedAnalyzer().analyze_evidence(case, case.evidence))
     case.leads = [lead for lead in case.leads if lead.source != "analysis"] + new_leads
     store.save_case(case)
     return new_leads, analysis
@@ -154,7 +161,7 @@ def resolve_unmatched_places(store: FileCaseStore, case_id: str, states: Iterabl
     region = normalize_states(states)
     texts = {item.identifier: str(item.content) for item in case.evidence}
     resolutions = []
-    for suggestion in suggest_places(case.evidence, case.places):
+    for suggestion in suggest_places(case.evidence, case.known_places()):
         hints = state_hints(suggestion.name, (texts[eid] for eid in suggestion.evidence_ids))
         resolutions.append(resolve(suggestion.name, hints, region))
     return resolutions
@@ -187,3 +194,78 @@ def ingest_chat(store: FileCaseStore, case_id: str, path: str | Path, fmt: str =
     result = ChatSource(fmt, dayfirst, source).load(path)
     store.add_evidence(case_id, result.evidence)
     return result
+
+
+# Principal defender
+
+
+_IDENTIFIER_FIELDS = {"phone": "phones", "email": "emails", "handle": "handles", "plate": "plates"}
+
+
+def create_defender_case(store: FileCaseStore, case_id: str, name: str, authorized_by: str, title: str = "",
+                         aliases: Iterable[str] = (), identifiers: Iterable[tuple[str, str]] = ()) -> Case:
+    """Open a principal-defender case protecting ``name``.
+
+    ``authorized_by`` says who asked for the protection and how; it is
+    required, because profiling someone's exposure is only defensive when
+    they (or whoever is responsible for them) asked for it.
+    """
+    from datetime import datetime, timezone
+
+    if not name.strip():
+        raise ValueError("the principal needs a name")
+    if not authorized_by.strip():
+        raise ValueError("say who authorized protecting this person (--authorized-by), "
+                         "e.g. \"the principal, signed engagement 2026-10-12\"")
+    principal = Principal(name=name.strip(), authorized_by=authorized_by.strip(),
+                          created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    _add_identifiers(principal, aliases, identifiers)
+    return store.create_case(Case(identifier=case_id, title=title.strip() or f"Protective intel: {principal.name}",
+                                  principal=principal))
+
+
+def _add_identifiers(principal: Principal, aliases: Iterable[str], identifiers: Iterable[tuple[str, str]]) -> None:
+    from ark_angel.analysis.defend import normalize_identifier
+
+    for alias in aliases:
+        if alias.strip() and alias.strip().lower() not in {a.lower() for a in principal.aliases}:
+            principal.aliases.append(alias.strip())
+    for kind, raw in identifiers:
+        values = getattr(principal, _IDENTIFIER_FIELDS[kind])
+        value = normalize_identifier(kind, raw)
+        if value not in values:
+            values.append(value)
+
+
+def defender_case(store: FileCaseStore, case_id: str) -> Case:
+    """Load a case and insist it's a principal-defender case."""
+    case = store.get_case(case_id)
+    if case.principal is None:
+        raise ValueError(f"case {case_id!r} isn't a principal-defender case (start one with `ark-angel defend init`)")
+    return case
+
+
+def add_principal_identifiers(store: FileCaseStore, case_id: str, aliases: Iterable[str] = (),
+                              identifiers: Iterable[tuple[str, str]] = ()) -> Principal:
+    case = defender_case(store, case_id)
+    _add_identifiers(case.principal, aliases, identifiers)
+    store.save_case(case)
+    return case.principal
+
+
+def add_sensitive_place(store: FileCaseStore, case_id: str, place: Place) -> Place:
+    """Add (or replace by name) one of the principal's sensitive places."""
+    case = defender_case(store, case_id)
+    place = _validate_place(place)
+    case.principal.places = [p for p in case.principal.places if p.name.lower() != place.name.lower()] + [place]
+    store.save_case(case)
+    return place
+
+
+def remove_sensitive_place(store: FileCaseStore, case_id: str, name: str) -> bool:
+    case = defender_case(store, case_id)
+    kept = [p for p in case.principal.places if p.name.lower() != name.lower()]
+    removed = len(kept) != len(case.principal.places)
+    case.principal.places = kept
+    store.save_case(case)
+    return removed

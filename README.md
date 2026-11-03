@@ -37,6 +37,7 @@ There is no AI model in the loop. Every lead comes from pattern matching you can
 - **Timeline**: every dated item, in order, with the most recent activity flagged.
 - **Lead review**: verify or dismiss leads, with a note on why. Every decision is kept as an audit trail. A dismissed lead comes back by itself, flagged as resurfaced, when new evidence joins it.
 - **Username lookup**: check a handle against public platforms (opt-in, network required). Hits are labelled unverified.
+- **Principal defender mode**: the engine turned around to protect someone. Instead of finding a missing person, a defender case shows how findable the *principal* is (a stalking or domestic-violence survivor, an executive, a public figure) and who is threatening them. It ranks exposures of their phone, email, handles, plate and home or work address across people-search listings, posts and geotagged photos, catches routines ("Tuesdays around 06:15 at the park"), and groups threatening messages by sender, flagging escalation and any sender who knows a real address. Every finding comes with a fix. `ark-angel defend demo` shows it.
 - **Reports**: terminal, Markdown, JSON, or a self-contained HTML case file that opens offline. The HTML numbers every piece of evidence as a court-style exhibit (EX-001, EX-002...), opens with the latest dated activity, shows a timeline strip, and prints cleanly on white paper (or "Print / save as PDF") for handing to partners. Terminal output uses one amber accent and respects `NO_COLOR` / `--no-color`.
 
 ---
@@ -44,6 +45,7 @@ There is no AI model in the loop. Every lead comes from pattern matching you can
 ## Use Cases
 
 - Missing persons investigations  
+- Protecting a stalking or abuse survivor, or anyone else who asked for it (principal defender mode)  
 - Human trafficking tracking  
 - Cold case recon  
 - Volunteer search efforts  
@@ -196,6 +198,58 @@ the audit trail: who decided, when, why, and what evidence the lead had then.
 
 Set `ARK_ANGEL_REVIEWER` (or pass `--by`) to record who made each call.
 
+## Principal defender mode
+
+A missing-person case asks "where is this person?". A defender case asks the
+same question from the other side: how easily could someone hostile answer it
+about the person you protect, and is anyone trying? Same evidence pipeline,
+same explained scores, pointed the other way.
+
+```bash
+ark-angel defend demo        # synthetic: exposures, a routine, an escalating threat, a re-listed phone
+
+ark-angel defend init P1 "Dana Whitlock" --authorized-by "the principal, signed engagement 2026-10-12" \
+    --alias "D. Whitlock" --phone 303-555-0182 --email dana@example.com --handle @dana_runs --plate DMO-4821
+ark-angel defend place P1 Home 39.706 -104.953 --alias "1187 Demo Lane"   # the label isn't searched; the alias is
+ark-angel defend place P1 Work 39.748 -104.992 --alias "Demo Tower" --radius-m 200
+
+ark-angel ingest P1 people_search_listings.txt     # whatever is out there: listings, posts, photos
+ark-angel ingest-image P1 posted_photo.jpg
+ark-angel ingest-chat P1 "WhatsApp Chat with Unknown.txt"   # messages the principal received
+ark-angel enrich P1
+ark-angel defend brief P1                          # risk level, threats, exposures, each with a fix
+ark-angel defend brief P1 --format md --out P1-brief.md
+
+ark-angel lead dismiss P1 exp-phone-3035550182 --note "opt-outs filed, listings removed"
+```
+
+What it looks for:
+
+- **Exposures**: each of the principal's identifiers wherever it shows up, however it's written. A single people-search listing is already an exposure. An item that also names the principal, or carries another of their identifiers, counts for more, because that's what lets a stranger tie it to them. A sensitive place is exposed when its address is written out or when a photo is geotagged inside its radius.
+- **Pattern of life and routines**: places the evidence keeps putting the principal that aren't registered as sensitive, and repeats of the same place on the same weekday within two hours of the same time.
+- **Threats**: threatening phrases (violence, location knowledge, approach, fixation) grouped by sender. A sender is flagged *escalating* when severity climbs or messages come faster, and *knows a sensitive location* when a threat names or is geotagged at one of the principal's sensitive places. Violence patterns need a target, so "you killed it at the presentation" doesn't count.
+
+Scoring, like everything else, is arithmetic you can read:
+
+```text
+exposure:  weight × items + 2 × (sources − 1) + 1 × linked items      (+3 for a routine)
+           weights: sensitive place 5, phone 4, plate 3.5, email 3, handle 2
+pattern:   2 × items + 2 × (sources − 1)                              (+3 for a routine)
+threat:    5 + Σ phrase weights (violence 6, location 5, approach 4, fixation 3)
+           +5 knows a sensitive location, +3 escalating
+```
+
+Risk is **CRITICAL** when an open threat knows a sensitive location, **HIGH** for violent or escalating threats, **ELEVATED** for other threats or an exposed sensitive place, and **GUARDED** when only exposures remain.
+
+Review works as it does on any case, and it fits this job well. Dismiss an exposure once it's fixed, with a note saying what you did. When a new listing re-exposes it, it comes back as RESURFACED with the new item named. Data brokers re-list people all the time, and this catches it.
+
+Guard rails:
+
+- `--authorized-by` is required and goes on the record. Defender mode is for people who asked to be protected, or for whoever is responsible for them.
+- Sensitive places never go into the case gazetteer, and `map` and `cameras` leave out any location on or next to one. An exported map of the case doesn't put a pin on the principal's house.
+- On the website, a defender case has no public profile tab, and the admin approval refuses to publish one even if a draft gets in some other way.
+- The threat patterns triage the messages. They don't decide anything. Preserve the messages and take real threats to law enforcement.
+
 ## Place lookups and privacy
 
 The built-in gazetteer is a resolver, not a matcher. It never scans evidence for
@@ -302,3 +356,4 @@ to rebuild it.
 - Architecture: `docs/architecture.md`
 - Roadmap: `docs/roadmap.md`
 - Running the website: `docs/deploy.md`
+- Principal defender mode: [above](#principal-defender-mode)

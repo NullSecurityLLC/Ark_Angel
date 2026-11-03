@@ -31,3 +31,21 @@ The files deliberately plant overlaps for ArkAngel to find:
 
 Photos are generated at run time by `ark-angel demo` with synthetic EXIF data,
 so no binary files live in the repository.
+
+## Principal defender demo (`ark-angel defend demo`)
+
+The `defend_*` files are a second synthetic case, for the principal-defender
+mode. "Dana Whitlock" is invented too, as are "1187 Demo Lane", "Demo Tower",
+"Rook" and every listing site (all on `.example` domains).
+
+- `defend_broker_listings.txt`: people-search listings that expose the
+  principal's home address, phone and email, the way they really get aggregated
+- `defend_posts.txt`: the principal's own posts. Three geotagged runs on
+  Tuesdays around 06:15 give away a routine, and one names their plate
+- `defend_messages.txt`: a WhatsApp export. "Rook" escalates over three weeks
+  from a grievance to naming the principal's street address. A coworker's
+  "you killed it at the presentation" must *not* count as a threat
+- `defend_late.txt`: a new listing that re-exposes the phone after the demo
+  marks it remediated, so the exposure resurfaces
+
+The demo also generates a photo geotagged 20 m from the principal's home.

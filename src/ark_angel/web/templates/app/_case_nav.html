@@ -6,7 +6,7 @@
   <a href="{{ url_for('workspace.tips', case_id=g.case.identifier) }}"{% if ep == 'workspace.tips' %} aria-current="page"{% endif %}>Website tips</a>
   {% if g.role in ('editor', 'owner') %}<a href="{{ url_for('workspace.upload', case_id=g.case.identifier) }}"{% if ep == 'workspace.upload' %} aria-current="page"{% endif %}>Add evidence</a>{% endif %}
   {% if g.role == 'owner' %}
-  <a href="{{ url_for('workspace.profile', case_id=g.case.identifier) }}"{% if ep == 'workspace.profile' %} aria-current="page"{% endif %}>Public profile{% if g.meta.published %} <span class="tag live">live</span>{% elif g.meta.draft_state == 'requested' %} <span class="tag">in review</span>{% endif %}</a>
+  {% if g.case.principal is none %}<a href="{{ url_for('workspace.profile', case_id=g.case.identifier) }}"{% if ep == 'workspace.profile' %} aria-current="page"{% endif %}>Public profile{% if g.meta.published %} <span class="tag live">live</span>{% elif g.meta.draft_state == 'requested' %} <span class="tag">in review</span>{% endif %}</a>{% endif %}
   <a href="{{ url_for('workspace.members', case_id=g.case.identifier) }}"{% if ep == 'workspace.members' %} aria-current="page"{% endif %}>Sharing</a>
   {% endif %}
 </nav>
