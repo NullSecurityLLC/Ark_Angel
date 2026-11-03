@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Sequence
 
-from ark_angel.analysis.base import Analyzer
+from ark_angel.analysis.base import Analyzer, is_investigator_activity, scan_text
 from ark_angel.analysis.extract import extract_entities, parse_datetime
 from ark_angel.analysis.places import PlaceMatcher
 from ark_angel.models import Case, Entity, Evidence, Lead, Place
@@ -116,7 +116,7 @@ def source_of(item: Evidence) -> str:
 
 def entities_of(item: Evidence) -> list[Entity]:
     """Entities in an evidence item's text plus any carried in its metadata."""
-    entities = extract_entities(str(item.content))
+    entities = extract_entities(scan_text(item))
     meta = item.metadata or {}
     handle = meta.get("handle")
     if handle and not any(e.kind == "handle" and e.value == handle.lower() for e in entities):
@@ -178,8 +178,9 @@ class _Scan:
 
     def add(self, item: Evidence) -> None:
         source = source_of(item)
-        text = str(item.content)
+        text = scan_text(item)
         meta = item.metadata or {}
+        investigator = is_investigator_activity(item)
         has_meta_coords = "latitude" in meta and "longitude" in meta
 
         for entity in entities_of(item):
@@ -201,7 +202,8 @@ class _Scan:
             self.points.append(GeoPoint(item.identifier, source, float(meta["latitude"]),
                                         float(meta["longitude"]), item.identifier))
 
-        when = parse_datetime(str(meta.get("timestamp", ""))) or parse_datetime(text)
+        # The case timeline is about the subject; the investigator's browsing has its own (`ark-angel trail`).
+        when = None if investigator else parse_datetime(str(meta.get("timestamp", ""))) or parse_datetime(text)
         if when:
             self.timeline.append(TimelineEvent(when, item.identifier, source, _excerpt(text, 140)))
 

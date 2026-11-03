@@ -37,6 +37,7 @@ There is no AI model in the loop. Every lead comes from pattern matching you can
 - **Timeline**: every dated item, in order, with the most recent activity flagged.
 - **Lead review**: verify or dismiss leads, with a note on why. Every decision is kept as an audit trail. A dismissed lead comes back by itself, flagged as resurfaced, when new evidence joins it.
 - **Username lookup**: check a handle against public platforms (opt-in, network required). Hits are labelled unverified.
+- **Browsing recorder**: the ArkAngel Recorder browser extension logs your investigation as you browse, with no copying and pasting. Every page, search and right-click "Add to case" clip goes into the case on your own computer. A page that mentions a phone, handle or plate already in the case is flagged while you're on it. `ark-angel trail` replays what you did: pivots ("you searched this because it was in tip T-1003"), threads you followed, and loose ends you saw but never looked up. Forgot to hit Record? `ingest-history` pulls a time window from Chrome, Edge, Brave, Firefox or Safari history.
 - **Principal defender mode**: the engine turned around to protect someone. Instead of finding a missing person, a defender case shows how findable the *principal* is (a stalking or domestic-violence survivor, an executive, a public figure) and who is threatening them. It ranks exposures of their phone, email, handles, plate and home or work address across people-search listings, posts and geotagged photos, catches routines ("Tuesdays around 06:15 at the park"), and groups threatening messages by sender, flagging escalation and any sender who knows a real address. Every finding comes with a fix. `ark-angel defend demo` shows it.
 - **Reports**: terminal, Markdown, JSON, or a self-contained HTML case file that opens offline. The HTML numbers every piece of evidence as a court-style exhibit (EX-001, EX-002...), opens with the latest dated activity, shows a timeline strip, and prints cleanly on white paper (or "Print / save as PDF") for handing to partners. Terminal output uses one amber accent and respects `NO_COLOR` / `--no-color`.
 
@@ -198,6 +199,65 @@ the audit trail: who decided, when, why, and what evidence the lead had then.
 
 Set `ARK_ANGEL_REVIEWER` (or pass `--by`) to record who made each call.
 
+## Recording your browsing
+
+Logging an investigation by hand is the part everybody skips. Let the browser do it.
+
+```bash
+ark-angel browse C1           # prints an address and a token; Ctrl+C stops and re-runs enrich
+```
+
+Load the extension from `extension/` (or `ark-angel-recorder.zip` on a release), paste the
+address and token into it, and press **Record**. See [extension/README.md](extension/README.md)
+for installing it and exactly what it sends. Then browse the way you normally would:
+
+```text
+  14:01  search search "303-555-0147"
+  14:02  visit  Room for rent near Union Station (classifieds.example)
+           MATCH phone 3035550147: also in tips (tips.csv:3)
+  14:06  visit  rt_demo_owl on Instagram (instagram.com)
+```
+
+```bash
+ark-angel trail C1                          # what you did, and what it means
+ark-angel trail C1 --format md --out trail.md
+```
+
+The trail splits your browsing into sessions, with time spent per page, and marks:
+
+- **MATCH**: a page that mentions something already in the case.
+- **pivot**: a search or a profile you opened for something you'd already seen, either in the
+  evidence or on an earlier page. The chain of pivots is your reasoning, written down for you.
+- **Threads you followed**: one phone, handle or plate across several steps.
+- **Loose ends**: something you clipped, or a match you saw, that you never looked up. This is
+  the 2am find you'd otherwise forget.
+
+**Your own browsing never props up a lead.** Only what a page *says* counts toward scores. The
+search you typed, the link you followed and the profile you opened are kept for the trail but
+never corroborate anything. Otherwise googling a number would make it rank higher. Browsing also
+stays out of the case timeline, which is about the person, not your clicks.
+
+Forgot to record? Pull the window from your browser's history:
+
+```bash
+ark-angel ingest-history C1 "<history file>" --since "2026-11-02 13:00" --until "2026-11-02 18:00" --dry-run
+```
+
+| Browser | History file |
+|---|---|
+| Chrome | Windows `%LOCALAPPDATA%\Google\Chrome\User Data\Default\History` · macOS `~/Library/Application Support/Google/Chrome/Default/History` · Linux `~/.config/google-chrome/Default/History` |
+| Edge | Windows `%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\History` · macOS `~/Library/Application Support/Microsoft Edge/Default/History` |
+| Brave | `…/BraveSoftware/Brave-Browser/Default/History` (same places as Chrome) |
+| Firefox | `places.sqlite` in your profile folder (`about:profiles` shows it) |
+| Safari | `~/Library/Safari/History.db` (the terminal needs Full Disk Access) |
+
+History has no page text, so it fills in the trail (searches, profiles, order) but adds nothing
+to the leads. `--since` is required: your whole history isn't case evidence.
+
+In a [defender case](#principal-defender-mode) the same recorder doubles as an exposure audit.
+Browse the people-search sites, and every page showing the principal's phone or address becomes an
+exposure that names the site to send the opt-out to.
+
 ## Principal defender mode
 
 A missing-person case asks "where is this person?". A defender case asks the
@@ -357,3 +417,4 @@ to rebuild it.
 - Roadmap: `docs/roadmap.md`
 - Running the website: `docs/deploy.md`
 - Principal defender mode: [above](#principal-defender-mode)
+- Browsing recorder extension: `extension/README.md`

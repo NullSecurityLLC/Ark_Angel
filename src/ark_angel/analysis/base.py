@@ -5,6 +5,22 @@ from typing import Sequence
 
 from ark_angel.models import Case, Evidence, Lead
 
+# Evidence produced by the investigator's own browsing (``metadata["origin"]``). Only what the page itself
+# said counts as corroboration: never the search you typed, the link you followed or the profile you opened,
+# or googling a phone number would make the phone rank higher.
+INVESTIGATOR_ORIGIN = "investigator"
+
+
+def is_investigator_activity(item: Evidence) -> bool:
+    return (item.metadata or {}).get("origin") == INVESTIGATOR_ORIGIN
+
+
+def scan_text(item: Evidence) -> str:
+    """The text pattern matching should read: the content, or for browsing, only what the page said."""
+    if is_investigator_activity(item):
+        return str((item.metadata or {}).get("page_excerpt") or "")
+    return str(item.content)
+
 
 class Analyzer(ABC):
     """Processes evidence to generate insights or new leads."""

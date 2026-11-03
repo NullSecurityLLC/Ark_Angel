@@ -747,6 +747,132 @@ def lead_reopen(store: FileCaseStore, case_id: str, lead_ref: str, note: str, re
 _WEB_MISSING = "the website needs the web extras: pip install 'ark-angel[web]'"
 
 
+# Browsing: the Recorder extension, history import and the investigator's trail
+
+
+def _local_time(value: str, option: str):
+    from ark_angel.analysis.extract import parse_datetime
+
+    when = parse_datetime(value)
+    if when is None:
+        raise click.ClickException(f"{option} wants a date like 2026-11-02 or 2026-11-02 14:30, got {value!r}")
+    return when
+
+
+@cli.command("browse")
+@click.argument("case_id")
+@click.option("--port", type=int, default=8766, show_default=True, help="Local port the extension sends to.")
+@click.option("--new-token", is_flag=True, help="Issue a new pairing token (the extension must be re-paired).")
+@click.option("--no-enrich", is_flag=True, help="Don't re-run enrich when recording stops.")
+@click.pass_obj
+def browse(store: FileCaseStore, case_id: str, port: int, new_token: bool, no_enrich: bool) -> None:
+    """Record your browsing into a case, through the ArkAngel Recorder extension.
+
+    Starts a receiver on 127.0.0.1 (nothing leaves this computer). In the
+    extension, set the address and token shown here and press Record. Every
+    page, search and "Add to case" clip lands in the case as you go, and pages
+    that mention something already in the case are flagged as MATCH. Stop with
+    Ctrl+C; then `ark-angel trail` shows what you did.
+
+    Only what pages say counts toward leads: your searches, the links you
+    follow and the profiles you open never corroborate anything.
+    """
+    from ark_angel.browse_server import Recorder, RecorderServer, load_token
+    from ark_angel.style import terminal_style
+
+    style = terminal_style()
+    recorder = Recorder(store, case_id, log=click.echo)
+    token = load_token(store.data_dir.parent / "recorder_token", rotate=new_token)
+    try:
+        server = RecorderServer(recorder, token, port)
+    except OSError as exc:
+        raise click.ClickException(f"can't listen on 127.0.0.1:{port} ({exc.strerror}); try --port")
+    click.echo(style.heading(f"Recording into case {case_id}") + style.dim(f"  {recorder.title}"))
+    click.echo(f"  address  {style.accent(f'http://127.0.0.1:{server.port}')}")
+    click.echo(f"  token    {style.accent(token)}")
+    click.echo(style.dim("  Paste both into the ArkAngel Recorder extension and press Record. Ctrl+C stops.\n"))
+    import signal
+
+    def _stop(*_):  # closing the terminal or `kill` stops it as cleanly as Ctrl+C
+        raise KeyboardInterrupt
+
+    try:
+        signal.signal(signal.SIGTERM, _stop)
+    except (ValueError, AttributeError):  # not the main thread, or a platform without SIGTERM
+        pass
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    click.echo(f"\nRecorded {recorder.captured} capture(s), {recorder.matched} matching the case.")
+    if recorder.captured and not no_enrich:
+        leads, _ = pipeline.enrich(store, case_id)
+        click.echo(f"Re-ran enrich: {len(leads)} lead(s).")
+    click.echo(f"See what you did: ark-angel trail {case_id}")
+
+
+@cli.command("ingest-history")
+@click.argument("case_id")
+@click.argument("history_file", type=click.Path(exists=True, dir_okay=False))
+@click.option("--since", required=True, help="Start of the window, local time: 2026-11-02 or '2026-11-02 14:30'.")
+@click.option("--until", help="End of the window (default: now).")
+@click.option("--format", "fmt", type=click.Choice(["auto", "chrome", "firefox", "safari"]), default="auto",
+              show_default=True)
+@click.option("--dry-run", is_flag=True, help="Show what would be imported, without saving.")
+@click.pass_obj
+def ingest_history(store: FileCaseStore, case_id: str, history_file: str, since: str, until: str, fmt: str,
+                   dry_run: bool) -> None:
+    """Import a window of browser history, for when the Recorder wasn't running.
+
+    HISTORY_FILE is Chrome/Edge/Brave's `History`, Firefox's `places.sqlite`
+    or Safari's `History.db` (see the README for where they live). History has
+    no page text, so it gives you the trail (searches, profiles, order) but
+    adds nothing that counts toward leads.
+    """
+    result = pipeline.ingest_history(store, case_id, history_file, _local_time(since, "--since"),
+                                     _local_time(until, "--until") if until else None, fmt, dry_run)
+    searches = sum(1 for e in result.evidence if e.metadata["kind"] == "search")
+    profiles = sum(1 for e in result.evidence if e.metadata.get("profile"))
+    verb = "Would import" if dry_run else "Imported"
+    click.echo(f"{verb} {len(result.evidence)} visit(s) from {result.format} history into case {case_id!r}: "
+               f"{searches} search(es), {profiles} profile page(s)"
+               + (f"; {result.skipped} non-web page(s) skipped" if result.skipped else ""))
+    if dry_run:
+        for item in result.evidence[:15]:
+            click.echo(f"  {item.content}")
+        if len(result.evidence) > 15:
+            click.echo(f"  … {len(result.evidence) - 15} more")
+    else:
+        click.echo(f"See the trail: ark-angel trail {case_id}")
+
+
+@cli.command("trail")
+@click.argument("case_id")
+@click.option("--format", "fmt", type=click.Choice(["text", "md", "json"]), default="text", show_default=True)
+@click.option("--out", "out_path", type=click.Path(dir_okay=False), help="Write to a file instead of stdout.")
+@click.option("--session", type=int, help="Only show this session's steps (text format).")
+@click.pass_obj
+def trail(store: FileCaseStore, case_id: str, fmt: str, out_path: str, session: int) -> None:
+    """Your investigation trail: sessions, pivots, threads you followed, loose ends you dropped."""
+    from ark_angel.analysis.trail import build_trail
+    from ark_angel.report.trail import render_trail_json, render_trail_markdown, render_trail_text
+    from ark_angel.style import PLAIN, terminal_style
+
+    data = build_trail(store.get_case(case_id).evidence)
+    output = {
+        "text": lambda: render_trail_text(data, case_id, PLAIN if out_path else terminal_style(), session),
+        "md": lambda: render_trail_markdown(data, case_id),
+        "json": lambda: render_trail_json(data, case_id),
+    }[fmt]()
+    if out_path:
+        Path(out_path).write_text(output, encoding="utf-8")
+        click.echo(f"Wrote {fmt} trail to {out_path}")
+    else:
+        click.echo(output)
+
+
 # Principal defender
 
 _identifier_options = [

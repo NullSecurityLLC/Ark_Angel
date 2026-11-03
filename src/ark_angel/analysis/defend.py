@@ -27,7 +27,7 @@ from datetime import datetime
 from typing import Iterable, Optional, Sequence
 
 from ark_angel.analysis.correlate import (
-    SOURCE_DIVERSITY_BONUS, CaseAnalysis, analyze_case, entities_of, haversine_km, source_of,
+    SOURCE_DIVERSITY_BONUS, CaseAnalysis, analyze_case, entities_of, haversine_km, scan_text, source_of,
 )
 from ark_angel.analysis.extract import normalize_phone, normalize_plate, parse_datetime
 from ark_angel.models import Entity, Evidence, Lead, Place, Principal
@@ -262,21 +262,23 @@ def analyze_principal(principal: Principal, evidence: Sequence[Evidence],
         return exposures.setdefault((kind, value), _Exposure(kind, value, label))
 
     for item in evidence:
-        text, source = str(item.content), source_of(item)
+        text, source = scan_text(item), source_of(item)
         entities = {(e.kind, e.value): e for e in entities_of(item)}
         own = [key for key in entities if key in identity.keys]
         named = identity.names_principal(text)
         linked_ids = named or len(own) > 1
+        # A page you browsed: say which site, since that's where the opt-out goes.
+        site = f"on {item.metadata['url']}: " if (item.metadata or {}).get("url") else ""
         for key in own:
             raw = entities[key].raw or key[1]
             exposure(*key, f"{_LABELS[key[0]]} {key[1]}").add(
-                item.identifier, source, f'"{_excerpt(text)}"' + (f" (written {raw})" if raw != key[1] else ""),
-                linked_ids)
+                item.identifier, source,
+                f'{site}"{_excerpt(text)}"' + (f" (written {raw})" if raw != key[1] else ""), linked_ids)
 
         for place, raw in identity.find_places(text):
             entry = exposure("place", place.name, f"Sensitive place {place.name}")
             alias = " ".join(raw.split()).lower() != place.name.lower()
-            entry.add(item.identifier, source, f'names {place.name}{f" as {raw!r}" if alias else ""}: '
+            entry.add(item.identifier, source, f'{site}names {place.name}{f" as {raw!r}" if alias else ""}: '
                                                f'"{_excerpt(text)}"', named or bool(own))
         for lat, lon in _coords(item):
             for place in identity.places:
@@ -415,7 +417,7 @@ def _threat_leads(evidence: Sequence[Evidence], identity: _Identity) -> list[Lea
     by_actor: dict[str, list[tuple[Evidence, list[ThreatHit]]]] = {}
     display: dict[str, str] = {}
     for item in evidence:
-        hits = threat_hits(str(item.content))
+        hits = threat_hits(scan_text(item))
         if hits:
             key, name = _actor(item, identity)
             display.setdefault(key, name)
@@ -469,7 +471,7 @@ def _known_places(messages: Iterable[tuple[Evidence, list[ThreatHit]]], identity
     """Sensitive places a threatening message names, or is geotagged at."""
     known: dict[str, None] = {}
     for item, _ in messages:
-        for place, _raw in identity.find_places(str(item.content)):
+        for place, _raw in identity.find_places(scan_text(item)):
             known[place.name] = None
         for lat, lon in _coords(item):
             for place in identity.places:

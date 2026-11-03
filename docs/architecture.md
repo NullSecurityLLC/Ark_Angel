@@ -20,6 +20,10 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
     column roles from headers, parses US, day-first, ISO and named-month dates,
     and keeps the other columns as `Header: value` text.
   - `image_source.py`: EXIF GPS, capture time and device, stored in evidence metadata.
+  - `browse_source.py`: the investigator's browsing (page visits, searches, clips) as evidence with
+    `metadata["origin"] = "investigator"`. Search queries and profile handles come from the URL;
+    `page_excerpt` keeps snippets around each entity or watched phrase on the page.
+  - `history_source.py`: a time window of Chrome/Edge/Brave, Firefox or Safari history, read from a copy.
   - `username_source.py`: parallel public-platform checks with per-site
     "not found" markers. Hits are labelled unverified.
 - **analysis/**
@@ -29,6 +33,10 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
     clustering, timeline, and explainable scoring. This is the core.
   - `places.py`: gazetteer matching (`PlaceMatcher`, longest name first,
     whole words) and `suggest_places` for place names that aren't resolved yet.
+  - `base.py`: `scan_text()`. For investigator-origin evidence, pattern matching reads only
+    `page_excerpt`, never the query, URL or profile, so your own searches can't corroborate a lead.
+    Browsing also stays out of the case timeline.
+  - `trail.py`: rebuilds the investigator's sessions, dwell, case matches, pivots, threads and loose ends.
   - `rules.py`: per-item tagging ("phone present in tips:T-1003").
   - `defend.py`: principal defender mode. It matches the principal's identifiers and
     sensitive places (by alias and by geotag radius) in evidence, finds patterns of
@@ -58,6 +66,10 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
   - `site.py`: per-case write locks, upload storage and image handling. Uploads are validated by Pillow with a pixel cap; profile photos are re-encoded without metadata.
   - Case evidence stays in `FileCaseStore` and goes through the same pipeline and report builders as the CLI.
   - Deployment: `Dockerfile`, `compose.yaml` and `deploy/Caddyfile`; see `docs/deploy.md`.
+- **browse_server.py**: the `ark-angel browse` receiver for the Recorder extension (`extension/`, MV3).
+  It is stdlib `http.server` on 127.0.0.1 with a pairing token. It refuses web-page Origins and
+  non-localhost Host headers, caps request bodies at 2 MB, and stores each capture immediately while
+  checking it against the case.
 - **review.py**: lead review. The append-only `Case.reviews` log is matched
   back onto freshly rebuilt leads, with score-ordered lead numbers, geo-cluster
   carry-over by evidence overlap, and dismissed leads resurfacing on new evidence.

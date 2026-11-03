@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable, Optional, Sequence
 
+from ark_angel.analysis.base import scan_text
 from ark_angel.models import Evidence, Place
 
 # Capitalised phrase after a location preposition or a movement verb + "to":
@@ -88,7 +89,7 @@ def suggest_places(evidence: Sequence[Evidence], places: Iterable[Place] = ()) -
     matcher = PlaceMatcher(places)
     suggestions: dict[str, PlaceSuggestion] = {}
     for item in evidence:
-        text = str(item.content)
+        text = scan_text(item)
         covered = [(start, end) for _, _, start, end in matcher.spans(text)]
         for match in _CANDIDATE_PATTERN.finditer(text):
             name = match.group(1).rstrip("'’-")

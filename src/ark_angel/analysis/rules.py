@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from ark_angel.analysis.base import Analyzer
+from ark_angel.analysis.base import is_investigator_activity, scan_text
 from ark_angel.analysis.extract import extract_entities
 from ark_angel.models import Case, Evidence, Lead
 
@@ -20,7 +21,9 @@ class RuleBasedAnalyzer(Analyzer):
     def analyze_evidence(self, case: Case, evidence_items: Sequence[Evidence]) -> Sequence[Lead]:
         leads: list[Lead] = []
         for item in evidence_items:
-            entities = [e for e in extract_entities(str(item.content)) if e.kind in _TAG_WEIGHTS]
+            if is_investigator_activity(item):  # one tag per browsed page is noise; correlation covers them
+                continue
+            entities = [e for e in extract_entities(scan_text(item)) if e.kind in _TAG_WEIGHTS]
             if not entities:
                 continue
             tags = list(dict.fromkeys(e.kind for e in entities))

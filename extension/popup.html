@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ArkAngel Recorder</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/icon-32.png" width="20" height="20" alt="">
+    <strong>ArkAngel Recorder</strong>
+    <span id="state" class="pill">off</span>
+  </header>
+
+  <p id="case" class="muted">Not connected.</p>
+  <div class="row">
+    <button id="record" class="primary">Record</button>
+    <button id="pause">Skip this site</button>
+  </div>
+  <p id="error" class="error" hidden></p>
+  <button id="retry" hidden>Send queued captures</button>
+
+  <h2>Matches with the case</h2>
+  <ul id="matches"><li class="muted">None yet.</li></ul>
+
+  <details id="setup">
+    <summary>Pairing and privacy</summary>
+    <label>Address <input id="server" spellcheck="false"></label>
+    <label>Token <input id="token" spellcheck="false" autocomplete="off"></label>
+    <p class="muted">Both are shown by <code>ark-angel browse CASE_ID</code>. Captures only go there.</p>
+    <label class="check"><input id="captureText" type="checkbox"> Read page text, so phones, handles and plates on the page are matched</label>
+    <label>Never record these sites (one per line)
+      <textarea id="denylist" rows="6" spellcheck="false"></textarea>
+    </label>
+    <button id="save">Save and test</button>
+    <p class="muted">Private windows are never recorded. Right-click → “Add selection to ArkAngel case” works even with Record off.</p>
+  </details>
+  <script src="popup.js"></script>
+</body>
+</html>

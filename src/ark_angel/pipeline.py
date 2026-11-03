@@ -269,3 +269,15 @@ def remove_sensitive_place(store: FileCaseStore, case_id: str, name: str) -> boo
     case.principal.places = kept
     store.save_case(case)
     return removed
+
+
+def ingest_history(store: FileCaseStore, case_id: str, path: str | Path, since, until=None, fmt: str = "auto",
+                   dry_run: bool = False):
+    """Add a window of browser history to a case as investigator activity (or just preview it)."""
+    from ark_angel.ingest.history_source import load_history
+
+    store.get_case(case_id)
+    result = load_history(path, since, until, fmt)
+    if not dry_run:
+        store.add_evidence(case_id, result.evidence)
+    return result
