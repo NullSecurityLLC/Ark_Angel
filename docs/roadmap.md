@@ -50,6 +50,15 @@ enough to ship in a short iteration without breaking the end-to-end workflow.
 - Provenance on every artifact (which tool, when, with what input).
 - Shareable exports (PDF) for partners and law enforcement.
 
+## Investigator activity
+
+- [x] ArkAngel Recorder browser extension + `ark-angel browse` local receiver, with live case matches.
+- [x] `ark-angel trail`: sessions, dwell, pivots, threads followed, loose ends.
+- [x] `ingest-history` for Chrome/Edge/Brave, Firefox and Safari.
+- Record straight into a case on the website (per-member extension tokens), not only the local CLI.
+- Screenshots of clipped pages, hashed, for an evidence-grade capture.
+- Publish the extension to the Chrome Web Store and Firefox Add-ons.
+
 ## Principal defender
 
 - [x] Defender cases (`ark-angel defend`): the principal's identifiers and sensitive places, exposure

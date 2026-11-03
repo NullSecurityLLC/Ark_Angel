@@ -50,6 +50,10 @@ jobs:
           cd "$RUNNER_TEMP"
           ark-angel --version
           ark-angel --data-dir cases demo --out demo.html
+      - name: Zip the Recorder browser extension
+        run: |
+          python -c "import json; json.load(open('extension/manifest.json'))"
+          (cd extension && zip -r -X "$GITHUB_WORKSPACE/dist/ark-angel-recorder.zip" . -x README.md)
       - uses: actions/upload-artifact@v4
         with:
           name: python-package
