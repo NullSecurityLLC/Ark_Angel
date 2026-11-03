@@ -87,6 +87,8 @@ def case_show(store: FileCaseStore, case_id: str) -> None:
     """Show a case's title, evidence count, and lead count."""
     case = store.get_case(case_id)
     click.echo(f"{case.identifier}: {case.title}")
+    if case.principal is not None:
+        click.echo(f"  principal defender case protecting {case.principal.name} (`ark-angel defend show`)")
     click.echo(f"  evidence: {len(case.evidence)}")
     click.echo(f"  leads: {len(case.leads)}")
 
@@ -149,6 +151,12 @@ def enrich(store: FileCaseStore, case_id: str) -> None:
     Safe to re-run: earlier analysis leads are replaced, not duplicated.
     """
     leads, analysis = pipeline.enrich(store, case_id)
+    if store.get_case(case_id).principal is not None:
+        threats = sum(1 for lead in leads if lead.identifier.startswith("threat-"))
+        click.echo(f"Generated {len(leads)} lead(s) for defender case {case_id!r} "
+                   f"({threats} threat, {len(leads) - threats} exposure/pattern). "
+                   f"See `ark-angel defend brief {case_id}`.")
+        return
     correlated = sum(1 for lead in leads if not lead.identifier.startswith("tag-"))
     click.echo(f"Generated {len(leads)} lead(s) for case {case_id!r} "
                f"({correlated} cross-source, {len(analysis.entity_index)} distinct entities)")
@@ -228,9 +236,13 @@ def map_export(store: FileCaseStore, case_id: str, out_path: str, fmt: str, no_c
     from ark_angel.report import build_report
 
     data = build_report(store.get_case(case_id))
+    withheld = data["sensitive_clusters_withheld"]
     if not data["clusters"] and not data["places"]:
-        raise click.ClickException("nothing to map yet: no geotagged evidence or places in this case")
+        raise click.ClickException("nothing to map yet: no geotagged evidence or places in this case"
+                                   + (f" ({withheld} location(s) near sensitive places left out)" if withheld else ""))
     _write_map(out_path, _map_format(out_path, fmt), data, [], not no_content)
+    if withheld:
+        click.echo(f"  Left out {withheld} location(s) on or next to the principal's sensitive places.")
 
 
 @cli.command("cameras")
@@ -527,7 +539,7 @@ def place_suggest(store: FileCaseStore, case_id: str) -> None:
     from ark_angel.analysis.places import suggest_places
 
     case = store.get_case(case_id)
-    suggestions = suggest_places(case.evidence, case.places)
+    suggestions = suggest_places(case.evidence, case.known_places())
     if not suggestions:
         click.echo("Every place-like name in the evidence is already in the gazetteer.")
         return
@@ -733,6 +745,172 @@ def lead_reopen(store: FileCaseStore, case_id: str, lead_ref: str, note: str, re
 
 
 _WEB_MISSING = "the website needs the web extras: pip install 'ark-angel[web]'"
+
+
+# Principal defender
+
+_identifier_options = [
+    click.option("--alias", "aliases", multiple=True, help="Another name the principal goes by (repeatable)."),
+    click.option("--phone", "phones", multiple=True, help="The principal's phone number (repeatable)."),
+    click.option("--email", "emails", multiple=True, help="The principal's email address (repeatable)."),
+    click.option("--handle", "handles", multiple=True, help="The principal's social handle (repeatable)."),
+    click.option("--plate", "plates", multiple=True, help="A plate on the principal's vehicle (repeatable)."),
+]
+
+
+def _identifier_flags(view):
+    for option in reversed(_identifier_options):
+        view = option(view)
+    return view
+
+
+def _identifiers(phones: tuple, emails: tuple, handles: tuple, plates: tuple) -> list[tuple[str, str]]:
+    return ([("phone", v) for v in phones] + [("email", v) for v in emails] + [("handle", v) for v in handles]
+            + [("plate", v) for v in plates])
+
+
+@cli.group("defend", help="Principal defender: how exposed is the person you protect, and who threatens them?")
+def defend_group() -> None:
+    """Principal-defender cases.
+
+    A defender case protects a named principal. Feed it what's out there about
+    them (people-search listings, their posts and photos, messages they've
+    received) and `defend brief` ranks the threats and exposures, each with a fix.
+    Ingest, enrich, lead review and reports all work on it like any other case.
+    """
+
+
+@defend_group.command("init")
+@click.argument("case_id")
+@click.argument("name")
+@click.option("--authorized-by", required=True,
+              help='Who asked for this protection and how, e.g. "the principal, signed engagement 2026-10-12".')
+@click.option("--title", default="", help="Case title (default: \"Protective intel: NAME\").")
+@_identifier_flags
+@click.pass_obj
+def defend_init(store: FileCaseStore, case_id: str, name: str, authorized_by: str, title: str, aliases: tuple,
+                phones: tuple, emails: tuple, handles: tuple, plates: tuple) -> None:
+    """Open a defender case protecting NAME."""
+    case = pipeline.create_defender_case(store, case_id, name, authorized_by, title, aliases,
+                                         _identifiers(phones, emails, handles, plates))
+    click.echo(f"Created defender case {case_id!r}: {case.title}")
+    click.echo(f"Next: `ark-angel defend place {case_id} Home LAT LON --alias \"<street address>\"`, "
+               f"then ingest what's out there and run `ark-angel defend brief {case_id}`.")
+
+
+@defend_group.command("add")
+@click.argument("case_id")
+@_identifier_flags
+@click.pass_obj
+def defend_add(store: FileCaseStore, case_id: str, aliases: tuple, phones: tuple, emails: tuple, handles: tuple,
+               plates: tuple) -> None:
+    """Add names or identifiers to the principal's profile."""
+    found = _identifiers(phones, emails, handles, plates)
+    if not aliases and not found:
+        raise click.ClickException("nothing to add: pass --alias, --phone, --email, --handle or --plate")
+    pipeline.add_principal_identifiers(store, case_id, aliases, found)
+    click.echo(f"Updated the principal's profile. Run `ark-angel enrich {case_id}` to re-check.")
+
+
+@defend_group.command("place", context_settings={"ignore_unknown_options": True})
+@click.argument("case_id")
+@click.argument("name")
+@click.argument("latitude", type=float)
+@click.argument("longitude", type=float)
+@click.option("--alias", "aliases", multiple=True,
+              help="How it's written in evidence, e.g. the street address (repeatable).")
+@click.option("--radius-m", type=float, default=150.0, show_default=True,
+              help="Geotagged evidence this close counts as exposing the place.")
+@click.option("--remove", is_flag=True, help="Remove the sensitive place NAME instead (coordinates ignored).")
+@click.pass_obj
+def defend_place(store: FileCaseStore, case_id: str, name: str, latitude: float, longitude: float, aliases: tuple,
+                 radius_m: float, remove: bool) -> None:
+    """Add (or replace) a sensitive place: home, work, school, a gym.
+
+    NAME is only a label. Give the street address or building name with
+    --alias: that is what's searched for in the evidence. Geotagged evidence
+    within --radius-m counts as exposing it too. Sensitive places never go into
+    `map` exports or the case gazetteer.
+    """
+    if remove:
+        removed = pipeline.remove_sensitive_place(store, case_id, name)
+        click.echo(f"Removed {name!r}" if removed else f"No sensitive place named {name!r}")
+        return
+    place = pipeline.add_sensitive_place(store, case_id, Place(name, latitude, longitude, list(aliases), radius_m,
+                                                               source="sensitive"))
+    click.echo(f"Added sensitive place {_describe(place)}")
+    click.echo(f"Run `ark-angel enrich {case_id}` to re-check.")
+
+
+@defend_group.command("show")
+@click.argument("case_id")
+@click.pass_obj
+def defend_show(store: FileCaseStore, case_id: str) -> None:
+    """Show the principal's profile: names, identifiers, sensitive places."""
+    case = pipeline.defender_case(store, case_id)
+    p = case.principal
+    click.echo(f"{case.identifier}: {case.title}")
+    click.echo(f"  principal: {p.name}" + (f" (also {', '.join(p.aliases)})" if p.aliases else ""))
+    click.echo(f"  authorized by: {p.authorized_by}" + (f" on {p.created_at[:10]}" if p.created_at else ""))
+    for label, values in (("phones", p.phones), ("emails", p.emails), ("handles", p.handles), ("plates", p.plates)):
+        if values:
+            click.echo(f"  {label}: {', '.join(values)}")
+    click.echo("  sensitive places:" if p.places else "  sensitive places: none yet (`ark-angel defend place`)")
+    for place in p.places:
+        click.echo(f"    {_describe(place)}")
+
+
+@defend_group.command("brief")
+@click.argument("case_id")
+@click.option("--format", "fmt", type=click.Choice(["text", "md", "json"]), default="text", show_default=True)
+@click.option("--out", "out_path", type=click.Path(dir_okay=False), help="Write to a file instead of stdout.")
+@click.option("--short", is_flag=True, help="Findings and fixes only, no evidence lines (text format).")
+@click.option("--all", "show_all", is_flag=True, help="Also list dismissed / remediated leads (text format).")
+@click.pass_obj
+def defend_brief(store: FileCaseStore, case_id: str, fmt: str, out_path: str, short: bool, show_all: bool) -> None:
+    """Risk level, threats and exposures, each with what to do about it.
+
+    Run `ark-angel enrich` first after adding evidence. Mark a fixed exposure
+    with `lead dismiss --note "listing removed"`: if it shows up again in new
+    evidence, it comes back as RESURFACED.
+    """
+    from ark_angel.report.defend import build_brief, render_brief_json, render_brief_markdown, render_brief_text
+    from ark_angel.style import PLAIN, terminal_style
+
+    data = build_brief(pipeline.defender_case(store, case_id))
+    output = {
+        "text": lambda: render_brief_text(data, PLAIN if out_path else terminal_style(), reasons=not short,
+                                          show_dismissed=show_all),
+        "md": lambda: render_brief_markdown(data),
+        "json": lambda: render_brief_json(data),
+    }[fmt]()
+    if out_path:
+        Path(out_path).write_text(output, encoding="utf-8")
+        click.echo(f"Wrote {fmt} briefing to {out_path}")
+    else:
+        click.echo(output)
+
+
+@defend_group.command("demo")
+@click.option("--case-id", default="DEFEND-DEMO", show_default=True, help="Case id to (re)build the demo under.")
+@click.pass_obj
+def defend_demo(store: FileCaseStore, case_id: str) -> None:
+    """Build a synthetic defender case end to end, offline, and print its briefing."""
+    from ark_angel.defend_demo import DEFEND_DEMO_NOTICE, build_defend_demo
+    from ark_angel.report.defend import build_brief, render_brief_text
+    from ark_angel.style import terminal_style
+
+    style = terminal_style()
+    click.echo(style.heading("ArkAngel principal defender demo")
+               + style.dim(f"  {style.dot} everything below is synthetic"))
+    click.echo(style.dim(style.rule * 60))
+    case = build_defend_demo(store, store.data_dir.parent / "defend_demo_inputs", case_id,
+                             log=lambda line: click.echo(style.dim(line)))
+    click.echo("")
+    click.echo(render_brief_text(build_brief(case), style, reasons=False))
+    click.echo("")
+    click.echo(style.dim(DEFEND_DEMO_NOTICE))
+    click.echo(style.dim(f"Explore further: ark-angel defend brief {case_id}   |   ark-angel lead list {case_id}"))
 
 
 @cli.group("web", help="The ArkAngel website: public profiles and tips, member workspaces, admin console.")

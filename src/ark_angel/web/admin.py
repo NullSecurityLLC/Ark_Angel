@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from flask import Blueprint, abort, g, redirect, render_template, request, send_from_directory, url_for
 
+from ark_angel.cases.store import CaseNotFoundError
 from ark_angel.web import notify
 from ark_angel.web.app import site
 from ark_angel.web.db import DraftChanged
@@ -76,6 +77,13 @@ def publication_photo(case_id: str, version: int):
     return send_from_directory(site().media_dir, meta["draft_photo"], mimetype="image/jpeg")
 
 
+def _is_defender_case(case_id: str) -> bool:
+    try:
+        return site().store.get_case(case_id).principal is not None
+    except (CaseNotFoundError, ValueError):
+        return False
+
+
 @bp.post("/publications/<case_id>")
 def decide_publication(case_id: str):
     db = site().db
@@ -86,6 +94,8 @@ def decide_publication(case_id: str):
                 version = int(request.form.get("version", ""))
             except ValueError:
                 abort(400)
+            if _is_defender_case(case_id):
+                abort(403)  # never publish the person a defender case protects
             old = (db.case(case_id) or {}).get("published_photo", "")
             try:
                 db.approve_publication(case_id, version)

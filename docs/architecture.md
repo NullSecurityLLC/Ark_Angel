@@ -30,6 +30,12 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
   - `places.py`: gazetteer matching (`PlaceMatcher`, longest name first,
     whole words) and `suggest_places` for place names that aren't resolved yet.
   - `rules.py`: per-item tagging ("phone present in tips:T-1003").
+  - `defend.py`: principal defender mode. It matches the principal's identifiers and
+    sensitive places (by alias and by geotag radius) in evidence, finds patterns of
+    life and weekday/time routines in the correlation clusters, and runs threat-phrase
+    triage grouped by sender, with escalation and "knows a sensitive location"
+    flags. `pipeline.enrich` runs it instead of correlation leads when a case has a
+    `principal`. `report/defend.py` renders the briefing.
 - **geo/**: shared EXIF helpers (`exif.py`), `ExifGeoResolver`, the built-in US
   gazetteer resolver (`builtin.py` + `data/us_gazetteer.csv.gz`, rebuilt by
   `scripts/build_gazetteer.py`), and the opt-in Nominatim lookup
@@ -58,6 +64,7 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
 - **pipeline.py**: the ingest, enrich and review steps shared by the CLI and the demo.
   `enrich` replaces earlier analysis leads, so it is always safe to re-run.
 - **demo.py** + **demo_data/**: the synthetic case behind `ark-angel demo`.
+  `defend_demo.py` and `demo_data/defend_*` build the one behind `ark-angel defend demo`.
 
 ## Scoring
 

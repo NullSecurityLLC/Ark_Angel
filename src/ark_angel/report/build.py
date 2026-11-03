@@ -52,7 +52,16 @@ def build_report(case: Case) -> dict[str, Any]:
     """Return leads in review order plus the entity index, geo clusters, timeline and exhibits."""
     analysis = analyze_case(case.evidence, places=case.places)
     exhibits = exhibit_labels(case)
+    clusters, withheld = list(analysis.clusters), 0
+    if case.principal is not None:
+        # Maps and canvass searches are built from these; never plot the area around a protected person's home.
+        from ark_angel.analysis.defend import touches_sensitive
+
+        clusters = [c for c in analysis.clusters
+                    if not touches_sensitive(c.latitude, c.longitude, c.radius_km * 1000, case.principal.places)]
+        withheld = len(analysis.clusters) - len(clusters)
     return {
+        "sensitive_clusters_withheld": withheld,
         "generated": {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "version": __version__},
         "exhibits": exhibits,
         "evidence": [
@@ -94,7 +103,7 @@ def build_report(case: Case) -> dict[str, Any]:
                             "longitude": p.longitude, "label": p.label, "place": p.place}
                            for p in cluster.points],
             }
-            for cluster in analysis.clusters
+            for cluster in clusters
         ],
         "places": [
             {"name": p.name, "latitude": p.latitude, "longitude": p.longitude, "aliases": list(p.aliases),

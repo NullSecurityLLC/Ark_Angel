@@ -50,6 +50,17 @@ enough to ship in a short iteration without breaking the end-to-end workflow.
 - Provenance on every artifact (which tool, when, with what input).
 - Shareable exports (PDF) for partners and law enforcement.
 
+## Principal defender
+
+- [x] Defender cases (`ark-angel defend`): the principal's identifiers and sensitive places, exposure
+      ranking with fixes, pattern-of-life and routine detection, threat triage by sender with
+      escalation, a risk level, and remediation tracked through lead review (re-listings resurface).
+- [x] Sensitive places kept out of maps, canvass searches and public profiles.
+- Data-broker opt-out tracker: which site, when filed, when to re-check.
+- Breach-exposure check for the principal's emails (opt-in network).
+- Threat lexicons for other languages, and per-case custom phrases.
+- HTML briefing to hand to a protection team.
+
 ## Phase 4: Scale
 
 - Relationship graph view across entities.

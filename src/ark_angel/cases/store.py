@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Iterable, TypeVar
 
 from ark_angel.cases.base import CaseStore
-from ark_angel.models import Case, Entity, Evidence, Lead, Place, Review
+from ark_angel.models import Case, Entity, Evidence, Lead, Place, Principal, Review
 
 CASE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
@@ -103,6 +103,14 @@ def _lead_from_dict(data: dict) -> Lead:
     return Lead(**data, entities=entities)
 
 
+def _principal_from_dict(data: dict | None) -> Principal | None:
+    if not data:
+        return None
+    data = dict(data)
+    places = [Place(**place) for place in data.pop("places", [])]
+    return Principal(**data, places=places)
+
+
 def _case_from_dict(data: dict) -> Case:
     return Case(
         identifier=data["identifier"],
@@ -112,4 +120,5 @@ def _case_from_dict(data: dict) -> Case:
         created_at=datetime.fromisoformat(data["created_at"]),
         places=[Place(**place) for place in data.get("places", [])],
         reviews=[Review(**review) for review in data.get("reviews", [])],
+        principal=_principal_from_dict(data.get("principal")),
     )
