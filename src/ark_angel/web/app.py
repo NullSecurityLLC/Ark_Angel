@@ -7,6 +7,9 @@ Protections, all enforced in one place (``_guard``) so a new route can't forget 
   double-submit token from an HttpOnly cookie (tip, sign-up and sign-in forms).
 - Cross-origin POSTs are refused, and requests must name an allowed Host, so a
   DNS-rebinding page can't reach a panel on localhost.
+- ``/api/recorder`` (the browser extension) skips all of the above for its own
+  check: a per-case bearer token, re-validated on every request, and no
+  session cookie at all. See :mod:`ark_angel.web.recorder`.
 - Strict security headers on every response: a CSP with no scripts at all on
   site pages, no framing, no referrer, no caching of signed-in pages.
 """
@@ -93,7 +96,7 @@ def create_app(store: FileCaseStore, db: SiteDB, base_dir: Optional[Path] = None
 
     ``mailer`` sends notifications (see :mod:`ark_angel.web.notify`); without one, no email is sent.
     """
-    from ark_angel.web import admin, public, workspace
+    from ark_angel.web import admin, public, recorder, workspace
 
     app = Flask(__name__)
     app.config.update(MAX_CONTENT_LENGTH=MAX_UPLOAD_BYTES + 1024 * 1024, TEMPLATES_AUTO_RELOAD=False,
@@ -106,6 +109,10 @@ def create_app(store: FileCaseStore, db: SiteDB, base_dir: Optional[Path] = None
     def _guard():
         if _host_only(request.host) not in hosts:
             abort(400)
+        if request.blueprint == "recorder":
+            # The extension's API: bearer token only, never the session cookie, so it has no CSRF exposure.
+            g.session = None
+            return recorder.guard()
         if request.method not in ("GET", "HEAD", "POST"):
             abort(405)
         if request.method == "POST":
@@ -171,6 +178,7 @@ def create_app(store: FileCaseStore, db: SiteDB, base_dir: Optional[Path] = None
     app.register_blueprint(public.bp)
     app.register_blueprint(workspace.bp, url_prefix="/app")
     app.register_blueprint(admin.bp, url_prefix="/admin")
+    app.register_blueprint(recorder.bp, url_prefix="/api/recorder")
 
     @app.errorhandler(400)
     @app.errorhandler(403)
@@ -180,10 +188,14 @@ def create_app(store: FileCaseStore, db: SiteDB, base_dir: Optional[Path] = None
     @app.errorhandler(429)
     def _error(exc):
         code = getattr(exc, "code", 500)
+        if request.path.startswith("/api/"):
+            return {"error": getattr(exc, "name", "Error")}, code
         return render_template("error.html", code=code, name=getattr(exc, "name", "Error")), code
 
     @app.errorhandler(500)
     def _crash(exc):
+        if request.path.startswith("/api/"):
+            return {"error": "Something went wrong"}, 500
         return render_template("error.html", code=500, name="Something went wrong"), 500
 
     return app

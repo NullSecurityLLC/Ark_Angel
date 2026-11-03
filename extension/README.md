@@ -22,13 +22,16 @@ It isn't in the browser stores yet, so load it unpacked. Use the
 
 ## Use
 
-```bash
-ark-angel browse C1
-```
+Pair it with one of these:
 
-It prints an address and a token. Paste both into the extension
-(*Pairing and privacy*), press **Save and test**, then **Record**. The token
-is kept between runs (`--new-token` replaces it), so you only pair once.
+- **A case on your ArkAngel website**: open the case, go to the **Recorder** tab,
+  and press *Make token*. Captures go straight into that case, under your name,
+  and its **Trail** tab shows them.
+- **This computer**: run `ark-angel browse C1`. The token is kept between runs
+  (`--new-token` replaces it), so you only pair once.
+
+Either one shows an address and a token. Paste both into the extension
+(*Pairing and privacy*), press **Save and test**, then **Record**.
 
 Ctrl+C stops `ark-angel browse` and re-runs `enrich`. Then:
 
@@ -45,14 +48,15 @@ ark-angel report C1     # pages that corroborate the case now count in the leads
   `"incognito": "not_allowed"`, and it checks again before every capture.
 - Never from sites on the skip list. The defaults cover webmail, sign-in pages,
   banks, PayPal and password managers. **Skip this site** adds the current one.
-- Only to the address you paired with, normally `http://127.0.0.1:8766`.
-  Nothing goes to any other server.
+- Only to the address you paired with: `http://127.0.0.1:8766` for
+  `ark-angel browse`, or your ArkAngel website. Nothing goes to any other server,
+  and pages on the ArkAngel site itself are never recorded.
 - For each page it sends the URL, title, time and visible text, so
   `ark-angel` can find phones, handles and plates on it. Untick *Read page
   text* to send only URL and title. Only snippets around what it found are kept
   in the case, not the whole page.
-- If ArkAngel isn't running, captures wait in the extension (up to 300) and
-  go out when it is. The badge shows `!` while any are waiting.
+- If ArkAngel isn't reachable, or the site's rate limit kicks in, captures
+  wait in the extension (up to 300) and go out when it is. The badge shows `!` while any are waiting.
 
 ## Badge
 

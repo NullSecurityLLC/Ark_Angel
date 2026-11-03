@@ -152,6 +152,7 @@ Data stays in the volume across updates.
 - **Sign-in.** Passwords are hashed with scrypt. 5 failed sign-ins for a username, or 20 from one address, lock it for 15 minutes.
 - **Forms.** Every form has a CSRF token. Cross-site posts and unexpected host names are refused.
 - **Spam.** Tips and sign-ups are rate limited per visitor, using a keyed hash of their address that is never stored in readable form and is kept for 24 hours.
+- **Browser recording.** `/api/recorder` takes the ArkAngel Recorder extension's captures. It never reads the session cookie, only a per-case bearer token that a member makes on the case's Recorder page. The token is shown once, stored as a SHA-256 hash, and expires after 7, 30 or 90 days. Each member can hold 5 per case, and the owner can revoke anyone's. Every request checks again that the account is active and still an editor or owner of that case. Requests from web pages (a non-extension `Origin`) are refused, captures are capped at 2 MB and 1,200 per token per hour, and they're written under the case lock like tips and uploads. Caddy needs nothing extra.
 - **Photos.** Public profile photos are re-encoded with all metadata removed. Evidence photos keep their GPS for analysis and are only ever shown to the case team.
 - **Browsers.** Pages run no scripts at all under a strict Content-Security-Policy, with HSTS, no framing and no referrers.
 - **The container.** It runs as an unprivileged user on a read-only filesystem, with every Linux capability dropped.

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Recorder · {{ g.case.title }}{% endblock %}
+{% block body %}
+{% include "app/_case_nav.html" %}
+{% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+
+{% if new_token %}
+<div class="callout" role="status">
+  <p><b>Paste these into the ArkAngel Recorder extension</b> (<i>Pairing and privacy</i>), then press Record.
+  This is the only time the token is shown. If you lose it, revoke it and make another.</p>
+  <dl>
+    <dt>Address</dt><dd><code class="select">{{ address }}</code></dd>
+    <dt>Token</dt><dd><code class="select">{{ new_token }}</code></dd>
+  </dl>
+</div>
+{% endif %}
+
+<section class="prose">
+<h2>Record your browsing into this case</h2>
+<p>The ArkAngel Recorder browser extension logs the pages you visit, what you search and anything you right-click and
+add, straight into this case. A page that mentions a phone, email, handle or plate already in the case is flagged
+while you're on it, and the <a href="{{ url_for('workspace.trail', case_id=g.case.identifier) }}">Trail</a> shows
+everyone's path through the investigation.</p>
+<p class="fine">Get the extension from <code>ark-angel-recorder.zip</code> on the
+<a href="https://github.com/NullSecurityLLC/Ark_Angel/releases" rel="noopener noreferrer">releases page</a> and load it
+in Chrome, Edge, Brave or Firefox. Your searches, the links you follow and the profiles you open are kept for the
+trail but never count toward a lead; only what pages themselves say does.</p>
+</section>
+
+{% if member %}
+<section>
+<h2>New recorder token</h2>
+<form method="post" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="label" class="sr">Name</label>
+  <input id="label" name="label" maxlength="60" placeholder="Which browser, e.g. work laptop Chrome">
+  <label for="days" class="sr">Lasts</label>
+  <select id="days" name="days">{% for d in days %}<option value="{{ d }}"{% if d == 30 %} selected{% endif %}>Lasts {{ d }} days</option>{% endfor %}</select>
+  <button name="action" value="create" class="btn primary">Make token</button>
+</form>
+<p class="fine">A token can only add browsing to this one case, as you. It stops working the moment it expires, you
+revoke it, your account is disabled, or you're no longer an editor here.</p>
+</section>
+{% else %}
+<p class="callout">You're seeing this case as a site admin. Only its members can record into it.</p>
+{% endif %}
+
+<section>
+<h2>{{ "Tokens on this case" if g.role == 'owner' else "Your tokens" }}</h2>
+{% if tokens %}
+<div class="table-wrap"><table>
+<thead><tr>{% if g.role == 'owner' %}<th>Member</th>{% endif %}<th>Name</th><th>Made</th><th>Expires</th><th>Last used</th><th>Captures</th><th></th></tr></thead>
+<tbody>
+{% for t in tokens %}
+<tr>
+  {% if g.role == 'owner' %}<td class="mono">{{ t.username }}</td>{% endif %}
+  <td>{{ t.label or "—" }}</td>
+  <td class="mono">{{ t.created_at|when }}</td>
+  <td class="mono">{{ t.expires_at|when }}</td>
+  <td class="mono">{{ t.last_used_at|when or "never" }}</td>
+  <td class="mono">{{ t.uses }}</td>
+  <td><form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="token" value="{{ t.id }}"><button name="action" value="revoke" class="btn small danger">Revoke</button></form></td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+{% else %}
+<p class="empty">No live tokens.</p>
+{% endif %}
+</section>
+{% endblock %}

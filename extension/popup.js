@@ -38,9 +38,9 @@ async function render() {
 
   if (cfg.token) {
     const status = await ask("status");
-    $("case").textContent = status.ok
-      ? `Case ${status.case}: ${status.title} · ${status.captured} captured this run`
-      : status.error;
+    const who = status.user ? ` as ${status.user}` : "";
+    const count = status.user ? `${status.captured} recorded by you` : `${status.captured} captured this run`;
+    $("case").textContent = status.ok ? `Case ${status.case}: ${status.title}${who} · ${count}` : status.error;
     $("case").className = status.ok ? "" : "error";
   }
 }

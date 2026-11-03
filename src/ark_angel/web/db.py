@@ -115,6 +115,18 @@ CREATE TABLE IF NOT EXISTS public_events (
     ip_hash TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS public_events_key ON public_events (kind, ip_hash, at);
+CREATE TABLE IF NOT EXISTS recorder_tokens (
+    id INTEGER PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    case_id TEXT NOT NULL REFERENCES cases(case_id) ON DELETE CASCADE,
+    label TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    last_used_at REAL,
+    uses INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS recorder_tokens_case ON recorder_tokens (case_id, user_id);
 CREATE TABLE IF NOT EXISTS notifications (
     user_id INTEGER NOT NULL,
     key TEXT NOT NULL,
@@ -133,6 +145,27 @@ _FAILURE_SQL = {
 }
 _SESSION_SQL = ("SELECT s.*, u.username, u.role, u.status FROM sessions s JOIN users u ON u.id = s.user_id "
                 "WHERE s.token_hash = ?")
+
+
+# Browser-extension tokens: one case each, editor or owner only, checked again on every use.
+RECORDER_TOKEN_PREFIX = "arkrec_"
+RECORDER_TOKEN_DAYS = (7, 30, 90)
+MAX_RECORDER_TOKENS = 5  # per member per case
+_RECORDER_SQL = ("SELECT t.id, t.user_id, t.case_id, t.label, t.expires_at, u.username, u.status, m.role "
+                 "FROM recorder_tokens t JOIN users u ON u.id = t.user_id "
+                 "LEFT JOIN case_members m ON m.case_id = t.case_id AND m.user_id = t.user_id "
+                 "WHERE t.token_hash = ?")
+
+
+@dataclass
+class RecorderAccess:
+    """Who a recorder token speaks for, after every check passed."""
+
+    token_id: int
+    user_id: int
+    username: str
+    case_id: str
+    role: str
 
 
 class DraftChanged(Exception):
@@ -556,6 +589,75 @@ class SiteDB:
         with self._connect() as db:
             db.execute("DELETE FROM case_members WHERE case_id = ? AND role != 'owner' AND "
                        "user_id = (SELECT id FROM users WHERE username = ?)", (case_id, normalize_username(username)))
+
+    # Recorder tokens (the browser extension)
+
+    def create_recorder_token(self, user_id: int, case_id: str, label: str = "", days: int = 30) -> str:
+        """Issue a token that lets the Recorder extension add browsing to one case. Shown once, stored hashed.
+
+        Raises:
+            ValueError: the user can't edit the case, has too many tokens for it, or ``days`` isn't offered.
+        """
+        if days not in RECORDER_TOKEN_DAYS:
+            raise ValueError(f"tokens last {', '.join(map(str, RECORDER_TOKEN_DAYS))} days")
+        if self.case_role(case_id, user_id) not in ("editor", "owner"):
+            raise ValueError("only the case's editors and owner can record into it")
+        now = self.clock()
+        token = RECORDER_TOKEN_PREFIX + secrets.token_urlsafe(32)
+        with self._connect() as db:
+            db.execute("DELETE FROM recorder_tokens WHERE expires_at <= ?", (now,))
+            count = db.execute("SELECT COUNT(*) FROM recorder_tokens WHERE user_id = ? AND case_id = ?",
+                               (user_id, case_id)).fetchone()[0]
+            if count >= MAX_RECORDER_TOKENS:
+                raise ValueError(f"you already have {MAX_RECORDER_TOKENS} recorder tokens for this case; "
+                                 "revoke one first")
+            db.execute("INSERT INTO recorder_tokens (token_hash, user_id, case_id, label, created_at, expires_at) "
+                       "VALUES (?, ?, ?, ?, ?, ?)",
+                       (_hash_token(token), user_id, case_id, " ".join(label.split())[:60], now, now + days * 86400))
+        return token
+
+    def recorder_access(self, token: str) -> Optional[RecorderAccess]:
+        """The access a token grants right now, or None.
+
+        Checked on every capture, not just when the token was made: an expired
+        token, a disabled account, or a member who was removed from the case or
+        made a viewer is refused straight away.
+        """
+        if not token.startswith(RECORDER_TOKEN_PREFIX) or len(token) > 128:
+            return None
+        now = self.clock()
+        with self._connect() as db:
+            row = db.execute(_RECORDER_SQL, (_hash_token(token),)).fetchone()
+            if row is None:
+                return None
+            if row["expires_at"] <= now:
+                db.execute("DELETE FROM recorder_tokens WHERE id = ?", (row["id"],))
+                return None
+            if row["status"] != "active" or row["role"] not in ("editor", "owner"):
+                return None
+            db.execute("UPDATE recorder_tokens SET last_used_at = ?, uses = uses + 1 WHERE id = ?", (now, row["id"]))
+        return RecorderAccess(int(row["id"]), int(row["user_id"]), row["username"], row["case_id"], row["role"])
+
+    def recorder_tokens(self, case_id: str, user_id: Optional[int] = None) -> list[sqlite3.Row]:
+        """Live tokens on a case (only ``user_id``'s when given), newest first. Never includes the token itself."""
+        sql = ("SELECT t.id, t.label, t.created_at, t.expires_at, t.last_used_at, t.uses, u.username "
+               "FROM recorder_tokens t JOIN users u ON u.id = t.user_id WHERE t.case_id = ? AND t.expires_at > ?")
+        args: tuple = (case_id, self.clock())
+        if user_id is not None:
+            sql += " AND t.user_id = ?"
+            args += (user_id,)
+        with self._connect() as db:
+            return db.execute(sql + " ORDER BY t.created_at DESC", args).fetchall()
+
+    def revoke_recorder_token(self, case_id: str, token_id: int, user_id: int, as_owner: bool = False) -> bool:
+        """Revoke a token on a case: your own, or anyone's when ``as_owner``."""
+        sql = "DELETE FROM recorder_tokens WHERE id = ? AND case_id = ?"
+        args: tuple = (token_id, case_id)
+        if not as_owner:
+            sql += " AND user_id = ?"
+            args += (user_id,)
+        with self._connect() as db:
+            return db.execute(sql, args).rowcount > 0
 
     # Public profiles
 

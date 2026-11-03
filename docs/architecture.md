@@ -59,6 +59,11 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
   - `db.py`: SQLite storage for everything about people. It holds accounts (scrypt hashes, a role, and a pending, active or disabled status), server-side sessions (tokens stored as SHA-256) and the sign-in log that drives lockout. It also records case ownership and sharing (owner, editor or viewer), each public profile's draft and approved copies, and rate-limit events keyed by an HMAC of the address.
   - `app.py`: one request hook enforces access by area, CSRF, Origin and Host on every route; another sets the security headers.
   - `public.py`, `workspace.py` and `admin.py` are the three areas.
+  - `recorder.py`: `/api/recorder` for the Recorder extension. It takes a per-case bearer token (hashed,
+    expiring, re-checked against the member's current role on every request) and never the session
+    cookie, so it needs no CSRF exemption. It reuses `browse_server`'s capture matching and writes
+    under the case lock. The workspace's Recorder tab issues and revokes tokens, and the Trail tab
+    renders `analysis/trail.py`.
   - `notify.py`: email notifications over SMTP (TLS required) from a background thread, throttled per person;
     messages carry links only, never case content.
   - `backup.py`: read-only snapshot, age encryption, rclone upload and pruning, and a restore that

@@ -1,7 +1,8 @@
-// ArkAngel Recorder: sends what you browse to `ark-angel browse` on this computer.
+// ArkAngel Recorder: sends what you browse to an ArkAngel case, either `ark-angel browse` on this computer or a
+// case on an ArkAngel website (its Recorder page gives the address and a token).
 //
 // Nothing is recorded unless Record is on, never in private windows, never on denylisted sites, and only to
-// the local ArkAngel receiver. Pages whose capture fails to send are queued and retried.
+// the address you paired with. Pages whose capture fails to send are queued and retried.
 const api = globalThis.browser ?? globalThis.chrome;
 
 const DEFAULTS = {
@@ -46,7 +47,11 @@ function hostOf(url) {
 function denied(url, cfg) {
   const host = hostOf(url);
   if (!/^https?:/i.test(url) || !host) return true;
-  if (url.startsWith(cfg.server)) return true;
+  try {
+    if (new URL(url).origin === new URL(cfg.server).origin) return true; // never log ArkAngel's own pages
+  } catch {
+    /* no server set yet */
+  }
   return cfg.denylist.some((d) => host === d || host.endsWith("." + d));
 }
 
@@ -77,7 +82,8 @@ async function post(cfg, payload) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(body.error || "HTTP " + response.status);
-    error.permanent = response.status >= 400 && response.status < 500 && response.status !== 401;
+    // Refused for good (bad capture, no access): drop it. Not paired yet, or rate limited: keep it queued.
+    error.permanent = response.status >= 400 && response.status < 500 && ![401, 408, 429].includes(response.status);
     throw error;
   }
   return body;
@@ -199,7 +205,7 @@ api.runtime.onMessage.addListener((message, _sender, reply) => {
         const body = await response.json();
         reply(response.ok ? { ok: true, ...body } : { ok: false, error: body.error || "HTTP " + response.status });
       } catch {
-        reply({ ok: false, error: "ArkAngel isn't listening. Run `ark-angel browse CASE_ID`." });
+        reply({ ok: false, error: "Can't reach ArkAngel at that address. Is `ark-angel browse` (or the site) running?" });
       }
       return;
     }

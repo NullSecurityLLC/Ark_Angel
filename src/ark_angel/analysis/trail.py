@@ -49,6 +49,7 @@ class Step:
     host: str
     url: str
     dwell: Optional[timedelta] = None
+    by: str = ""  # who recorded it, on a shared website case
     hits: dict[Key, list[str]] = field(default_factory=dict)  # entity -> case evidence ids
     pivots: dict[Key, Seen] = field(default_factory=dict)  # entity looked up -> where you'd seen it
     looked_up: list[Key] = field(default_factory=list)  # entities this step searched for or opened
@@ -98,8 +99,12 @@ def _when(item: Evidence) -> datetime:
     return parse_datetime(str(meta.get("timestamp", ""))) or datetime.min
 
 
-def build_trail(evidence: Sequence[Evidence]) -> Trail:
-    """Reconstruct the investigator's trail from a case's evidence."""
+def build_trail(evidence: Sequence[Evidence], by: str = "") -> Trail:
+    """Reconstruct the investigator's trail from a case's evidence.
+
+    ``by`` keeps only what one member recorded (on a shared website case);
+    the rest of the case is still what their pages are matched against.
+    """
     case_index: dict[Key, list[str]] = {}
     for item in evidence:
         if is_investigator_activity(item):
@@ -111,7 +116,8 @@ def build_trail(evidence: Sequence[Evidence]) -> Trail:
                     ids.append(item.identifier)
     case_labels = {item.identifier: source_of(item) for item in evidence}
 
-    browsing = sorted((item for item in evidence if is_investigator_activity(item)),
+    browsing = sorted((item for item in evidence if is_investigator_activity(item)
+                       and (not by or (item.metadata or {}).get("recorded_by") == by)),
                       key=lambda item: (_when(item), item.identifier))
     known: set[Key] = set(case_index)
     for item in browsing:
@@ -127,7 +133,8 @@ def build_trail(evidence: Sequence[Evidence]) -> Trail:
                  str(meta.get("title") or meta.get("url") or item.identifier))
         if kind == "clip":
             label = str(meta.get("page_excerpt") or label)
-        step = Step(item.identifier, kind, _when(item), label, str(meta.get("host") or ""), str(meta.get("url") or ""))
+        step = Step(item.identifier, kind, _when(item), label, str(meta.get("host") or ""), str(meta.get("url") or ""),
+                    by=str(meta.get("recorded_by") or ""))
         session_id = str(meta.get("session") or "")
 
         if kind == "search":
@@ -145,7 +152,7 @@ def build_trail(evidence: Sequence[Evidence]) -> Trail:
         for key in step.found:
             seen_on_page.setdefault(key, Seen(item.identifier, f'"{step.label}" ({step.host})', step.when))
 
-        new_session = (previous is None or (session_id and session_id != previous[1])
+        new_session = (previous is None or (session_id and session_id != previous[1]) or step.by != previous[0].by
                        or step.when - previous[0].when > SESSION_GAP)
         if not new_session and previous is not None:
             previous[0].dwell = min(step.when - previous[0].when, DWELL_CAP)
