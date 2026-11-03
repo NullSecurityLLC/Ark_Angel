@@ -51,6 +51,7 @@ NOTICES = {
     "shared": "Sharing updated.",
     "signed_out_others": "Your other sessions were signed out.",
     "email": "Email settings saved.",
+    "revoked": "Recorder token revoked. The extension using it can't add anything to this case now.",
 }
 
 
@@ -265,6 +266,62 @@ def case_map(case_id: str, fmt: str):
     resp = Response(body, mimetype=mimetype)
     resp.headers["Content-Disposition"] = f'attachment; filename="{case_id}.{fmt}"'
     return resp
+
+
+# Browsing: the Recorder extension and the investigator trail
+
+
+def _render_recorder(new_token: str = "", error: str = "", notice_text: str = ""):
+    from ark_angel.web.db import RECORDER_TOKEN_DAYS
+
+    s = site()
+    case_id = g.case.identifier
+    owner = g.role == "owner"
+    tokens = s.db.recorder_tokens(case_id, None if owner else g.session.user_id)
+    address = url_for("recorder.status", _external=True).removesuffix("/status")
+    member = s.db.case_role(case_id, g.session.user_id) in ("editor", "owner")
+    page = render_template("app/recorder.html", tokens=tokens, address=address, new_token=new_token,
+                           days=RECORDER_TOKEN_DAYS, member=member, error=error, notice=notice_text)
+    return page, 400 if error else 200
+
+
+@bp.route("/cases/<case_id>/recorder", methods=["GET", "POST"])
+@case_route("editor")
+def recorder(case_id: str):
+    if request.method == "GET":
+        return _render_recorder(notice_text=notice())
+    s = site()
+    if request.form.get("action") == "revoke":
+        try:
+            token_id = int(request.form.get("token", ""))
+        except ValueError:
+            abort(400)
+        if not s.db.revoke_recorder_token(case_id, token_id, g.session.user_id, as_owner=g.role == "owner"):
+            abort(404)
+        return _back("workspace.recorder", case_id, "revoked")
+    try:
+        days = int(request.form.get("days", "30"))
+        token = s.db.create_recorder_token(g.session.user_id, case_id, request.form.get("label", ""), days)
+    except ValueError as exc:
+        message = str(exc) if "token" in str(exc) or "editors" in str(exc) else "Pick how long the token lasts."
+        return _render_recorder(error=message[:1].upper() + message[1:] + ".")
+    # Shown on this response only. It isn't stored anywhere it could be shown again.
+    return _render_recorder(new_token=token)
+
+
+@bp.get("/cases/<case_id>/trail")
+@case_route("viewer")
+def trail(case_id: str):
+    from ark_angel.analysis.trail import build_trail
+    from ark_angel.report.trail import _span, _step_notes
+
+    recorders = sorted({str((item.metadata or {}).get("recorded_by")) for item in g.case.evidence
+                        if (item.metadata or {}).get("recorded_by")})
+    by = request.args.get("by", "")
+    if by and by not in recorders:
+        by = ""
+    data = build_trail(g.case.evidence, by=by)
+    return render_template("app/trail.html", trail=data, recorders=recorders, by=by, notes=_step_notes, span=_span)
 
 
 # Public profile

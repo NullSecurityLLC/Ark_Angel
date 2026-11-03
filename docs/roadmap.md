@@ -55,7 +55,7 @@ enough to ship in a short iteration without breaking the end-to-end workflow.
 - [x] ArkAngel Recorder browser extension + `ark-angel browse` local receiver, with live case matches.
 - [x] `ark-angel trail`: sessions, dwell, pivots, threads followed, loose ends.
 - [x] `ingest-history` for Chrome/Edge/Brave, Firefox and Safari.
-- Record straight into a case on the website (per-member extension tokens), not only the local CLI.
+- [x] Record straight into a case on the website: per-case, per-member extension tokens, a Trail tab.
 - Screenshots of clipped pages, hashed, for an evidence-grade capture.
 - Publish the extension to the Chrome Web Store and Firefox Add-ons.
 

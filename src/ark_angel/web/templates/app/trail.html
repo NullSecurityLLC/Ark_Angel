@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Trail · {{ g.case.title }}{% endblock %}
+{% block body %}
+{% include "app/_case_nav.html" %}
+{% set steps = trail.steps %}
+{% if recorders|length > 1 %}
+<form method="get" class="inline-form">
+  <label for="by" class="sr">Whose trail</label>
+  <select id="by" name="by"><option value="">Everyone</option>{% for r in recorders %}<option value="{{ r }}"{% if r == by %} selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+  <button class="btn small">Show</button>
+</form>
+{% endif %}
+
+{% if not steps %}
+<p class="empty">No browsing recorded{% if by %} by {{ by }}{% endif %} yet.
+{% if g.role in ('editor', 'owner') %}<a href="{{ url_for('workspace.recorder', case_id=g.case.identifier) }}">Set up the Recorder</a> to log it as you go.{% endif %}</p>
+{% else %}
+<div class="meta">
+  <span><b>{{ trail.sessions|length }}</b> sessions</span>
+  <span><b>{{ steps|rejectattr('kind', 'equalto', 'search')|list|length }}</b> pages</span>
+  <span><b>{{ steps|selectattr('kind', 'equalto', 'search')|list|length }}</b> searches</span>
+  <span><b>{{ steps|selectattr('hits')|list|length }}</b> matching the case</span>
+</div>
+
+<section>
+<h2>Loose ends</h2>
+{% if trail.loose_ends %}
+<ul class="reasons">
+{% for key, step, ids in trail.loose_ends[:15] %}
+<li><b class="mono">{{ key[0] }} {{ key[1] }}</b>, seen {{ step.when.strftime('%Y-%m-%d %H:%M') }} on {{ step.host or step.label }}{% if step.by %} by {{ step.by }}{% endif %}{% if ids %}, matches {{ ids[:3]|join(', ') }}{% else %}, clipped{% endif %}. <span class="dim">Never looked up.</span></li>
+{% endfor %}
+</ul>
+{% else %}<p class="empty">None: everything clipped or matched was followed up.</p>{% endif %}
+</section>
+
+{% if trail.threads %}
+<section>
+<h2>Threads followed</h2>
+<ul class="reasons">
+{% for key, run in trail.threads[:10] %}
+<li><b class="mono">{{ key[0] }} {{ key[1] }}</b> <span class="dim">{% for s in run %}{{ s.when.strftime('%H:%M') }} {{ 'page' if s.kind == 'visit' else s.kind }}{% if not loop.last %} → {% endif %}{% endfor %}</span></li>
+{% endfor %}
+</ul>
+</section>
+{% endif %}
+
+{% for session in trail.sessions|reverse %}
+<section>
+<h2>Session {{ trail.sessions|length - loop.index0 }} · {{ session.start.strftime('%Y-%m-%d %H:%M') }}–{{ session.end.strftime('%H:%M') }}{% if session.steps[0].by %} · {{ session.steps[0].by }}{% endif %}</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Time</th><th>What</th><th>Where</th><th>Spent</th></tr></thead>
+<tbody>
+{% for s in session.steps %}
+<tr>
+  <td class="mono">{{ s.when.strftime('%H:%M') }}</td>
+  <td>
+    {% if s.kind == 'search' %}search: <b>“{{ s.label }}”</b>
+    {% elif s.kind == 'clip' %}clip: “{{ s.label }}”
+    {% else %}{{ s.label }}{% endif %}
+    {% for note in notes(s) %}<div class="{{ 'match' if note.startswith('MATCH') else 'dim' }}">{{ note }}</div>{% endfor %}
+  </td>
+  <td class="mono clip">{% if s.url and s.kind != 'search' and s.url.startswith(('http://', 'https://')) %}<a href="{{ s.url }}" rel="noopener noreferrer nofollow" target="_blank">{{ s.host }}</a>{% endif %}</td>
+  <td class="mono">{{ span(s.dwell) }}</td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+</section>
+{% endfor %}
+{% endif %}
+{% endblock %}

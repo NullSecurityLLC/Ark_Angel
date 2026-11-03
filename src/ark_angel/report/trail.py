@@ -34,7 +34,7 @@ def _step_notes(step: Step) -> list[str]:
 
 def trail_dict(trail: Trail, case_id: str) -> dict[str, Any]:
     def step(s: Step) -> dict[str, Any]:
-        return {"evidence_id": s.evidence_id, "kind": s.kind, "when": s.when.isoformat(sep=" ", timespec="seconds"),
+        return {"evidence_id": s.evidence_id, "kind": s.kind, "by": s.by, "when": s.when.isoformat(sep=" ", timespec="seconds"),
                 "label": s.label, "host": s.host, "url": s.url,
                 "dwell_seconds": round(s.dwell.total_seconds()) if s.dwell else None,
                 "looked_up": [list(k) for k in s.looked_up], "found": [list(k) for k in s.found],

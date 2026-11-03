@@ -57,6 +57,45 @@ def watch_terms(case) -> list[str]:
     return [t for t in terms if len(t.strip()) >= 3]
 
 
+Index = dict[tuple[str, str], list[str]]
+
+
+def evidence_label(item) -> str:
+    meta = item.metadata or {}
+    return f"a page on {meta.get('host')}" if is_investigator_activity(item) else f"{source_of(item)} ({item.identifier})"
+
+
+def index_evidence(items, index: Optional[Index] = None, labels: Optional[dict[str, str]] = None) -> tuple[Index, dict]:
+    """Where each phone, email, handle and plate appears; extends ``index`` and ``labels`` when given."""
+    index = {} if index is None else index
+    labels = {} if labels is None else labels
+    for item in items:
+        labels[item.identifier] = evidence_label(item)
+        for entity in entities_of(item):
+            if entity.kind in TRACKED:
+                ids = index.setdefault((entity.kind, entity.value), [])
+                if item.identifier not in ids:
+                    ids.append(item.identifier)
+    return index, labels
+
+
+def capture_hits(evidence, index: Index, labels: dict[str, str]) -> list[dict]:
+    """What a new capture shares with evidence already in the case."""
+    hits = []
+    for entity in entities_of(evidence):
+        others = [eid for eid in index.get((entity.kind, entity.value), []) if eid != evidence.identifier]
+        if entity.kind in TRACKED and others:
+            hits.append({"kind": entity.kind, "value": entity.value, "seen_in": [labels[eid] for eid in others[:5]]})
+    return hits
+
+
+def describe(evidence) -> str:
+    meta = evidence.metadata
+    return (f'search "{meta.get("query")}"' if meta["kind"] == "search" else
+            f"clip from {meta['host']}" if meta["kind"] == "clip" else
+            f"{meta.get('title') or meta['url']} ({meta['host']})")
+
+
 class Recorder:
     """Stores captures for one case and spots matches with what the case already holds."""
 
@@ -66,41 +105,20 @@ class Recorder:
         case = store.get_case(case_id)
         self.title = case.title
         self.watch = watch_terms(case)
-        self.index: dict[tuple[str, str], list[str]] = {}
-        self.labels: dict[str, str] = {}
-        for item in case.evidence:
-            self._index(item)
+        self.index, self.labels = index_evidence(case.evidence)
         self.captured = 0
         self.matched = 0
-
-    def _index(self, item) -> None:
-        meta = item.metadata or {}
-        self.labels[item.identifier] = (f"a page on {meta.get('host')}" if is_investigator_activity(item)
-                                        else f"{source_of(item)} ({item.identifier})")
-        for entity in entities_of(item):
-            if entity.kind in TRACKED:
-                ids = self.index.setdefault((entity.kind, entity.value), [])
-                if item.identifier not in ids:
-                    ids.append(item.identifier)
 
     def capture(self, payload: dict) -> dict:
         evidence = capture_to_evidence(parse_capture(payload), self.watch)
         with self.lock:
             self.store.add_evidence(self.case_id, [evidence])
-            hits = []
-            for entity in entities_of(evidence):
-                others = [eid for eid in self.index.get((entity.kind, entity.value), []) if eid != evidence.identifier]
-                if entity.kind in TRACKED and others:
-                    hits.append({"kind": entity.kind, "value": entity.value,
-                                 "seen_in": [self.labels[eid] for eid in others[:5]]})
-            self._index(evidence)
+            hits = capture_hits(evidence, self.index, self.labels)
+            index_evidence([evidence], self.index, self.labels)
             self.captured += 1
             self.matched += bool(hits)
         meta = evidence.metadata
-        what = (f'search "{meta.get("query")}"' if meta["kind"] == "search" else
-                f"clip from {meta['host']}" if meta["kind"] == "clip" else
-                f"{meta.get('title') or meta['url']} ({meta['host']})")
-        self.log(f"  {meta['timestamp'][11:16]}  {meta['kind']:<6} {what}")
+        self.log(f"  {meta['timestamp'][11:16]}  {meta['kind']:<6} {describe(evidence)}")
         for hit in hits:
             self.log(f"           MATCH {hit['kind']} {hit['value']}: also in {', '.join(hit['seen_in'])}")
         return {"stored": evidence.identifier, "kind": meta["kind"], "hits": hits}

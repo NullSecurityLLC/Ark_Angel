@@ -237,6 +237,12 @@ search you typed, the link you followed and the profile you opened are kept for 
 never corroborate anything. Otherwise googling a number would make it rank higher. Browsing also
 stays out of the case timeline, which is about the person, not your clicks.
 
+**On the website**, open a case's **Recorder** tab, make a token, and paste the address and token it
+shows into the extension instead. Captures go straight into that case, with your name on them,
+and the case's **Trail** tab shows everyone's path through the investigation, filterable by
+member. A token works for one case only and can be revoked any time. It stops working as soon as
+you're no longer an editor there. No `ark-angel browse` needed.
+
 Forgot to record? Pull the window from your browser's history:
 
 ```bash
@@ -356,7 +362,7 @@ contributors (ODbL).
 The website is ArkAngel for everyone working a case, not just whoever has the command line:
 
 - **Public, no account:** a list of missing people and a page for each, with a tip form. Tips can include a photo; its GPS and time feed the analysis. Tippers can stay anonymous. Their IP address is never stored, only a scrambled code used for rate limiting, which is deleted after 24 hours.
-- **Members, approved by an admin:** private case workspaces. Members upload tips, tip-line CSVs, email, chats and photos, get ranked leads, verify or dismiss them, and share a case with others as editor or viewer.
+- **Members, approved by an admin:** private case workspaces. Members upload tips, tip-line CSVs, email, chats and photos, get ranked leads, verify or dismiss them, and share a case with others as editor or viewer. With the Recorder extension, their browsing goes into the case as they investigate, and the case's Trail shows who looked at what.
 - **Admins:** approve sign-ups and every public profile, manage users, and see the sign-in log.
 
 **Profiles go public only after an admin approves them, with a police report reference, and so does every later edit.** While an edit is in review, visitors keep seeing the last approved version. Public profile photos are re-saved with every bit of hidden data removed. These rules exist because a public "missing person" page is also a tool for finding someone who fled an abuser. Approval is what stops the site being used that way.
