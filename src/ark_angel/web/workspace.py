@@ -51,6 +51,7 @@ NOTICES = {
     "shared": "Sharing updated.",
     "signed_out_others": "Your other sessions were signed out.",
     "email": "Email settings saved.",
+    "2fa_required": "This site requires two-factor sign-in for your account. Set it up below to carry on.",
     "revoked": "Recorder token revoked. The extension using it can't add anything to this case now.",
 }
 
@@ -438,13 +439,98 @@ def delete_case(case_id: str):
 # Account
 
 
-def _render_account(error: str = "", email_error: str = "", notice_text: str = ""):
+def _render_account(error: str = "", email_error: str = "", notice_text: str = "", mfa_error: str = "",
+                    setup: bool = False, recovery_codes: list | None = None):
+    from ark_angel.web import totp
+
     s = site()
+    user = s.db.user_by_id(g.session.user_id)
+    qr = secret = ""
+    if setup:
+        secret = s.db.pending_totp(g.session.user_id)
+        qr = totp.qr_svg_data_uri(totp.otpauth_uri(secret, user["username"], current_app.config["SITE_NAME"]))
     page = render_template("app/account.html", sessions=s.db.sessions_for(g.session.user_id),
                            current=g.session.token_hash, events=s.db.recent_events(20, g.session.username),
-                           user=s.db.user_by_id(g.session.user_id), email_on=s.mailer.enabled,
-                           error=error, email_error=email_error, notice=notice_text)
-    return page, 400 if error or email_error else 200
+                           user=user, email_on=s.mailer.enabled, error=error, email_error=email_error,
+                           notice=notice_text, mfa_error=mfa_error, setup=setup, qr=qr,
+                           secret=totp.grouped(secret) if secret else "", recovery_codes=recovery_codes or [],
+                           codes_left=s.db.recovery_codes_left(g.session.user_id),
+                           mfa_required=current_app.extensions["ark_must_have_2fa"](g.session))
+    return page, 400 if error or email_error or mfa_error else 200
+
+
+def _sentence(exc: Exception) -> str:
+    text = str(exc)
+    return text[:1].upper() + text[1:] + "."
+
+
+# Two-factor sign-in. Turning it on, off, or replacing recovery codes all re-ask for the password, so a
+# stolen session cookie alone can't lock the owner out or switch the second factor off.
+
+
+@bp.post("/account/2fa/start")
+def twofa_start():
+    s = site()
+    if g.session.mfa:
+        abort(400)
+    if not s.db.check_password(g.session.user_id, request.form.get("password", "")):
+        return _render_account(mfa_error="Your password is wrong.")
+    s.db.begin_totp(g.session.user_id)
+    return _render_account(setup=True)
+
+
+@bp.post("/account/2fa/confirm")
+def twofa_confirm():
+    s = site()
+    if g.session.mfa or not s.db.pending_totp(g.session.user_id):
+        abort(400)
+    try:
+        codes = s.db.confirm_totp(g.session.user_id, request.form.get("code", "")[:16], client_ip(), user_agent())
+    except ValueError as exc:
+        return _render_account(mfa_error=_sentence(exc), setup=True)
+    # Whoever else might be signed in as you didn't pass a second factor: sign them out.
+    s.db.end_other_sessions(g.session)
+    g.session.mfa = True
+    return _render_account(notice_text="Two-factor sign-in is on. Your other sessions were signed out.",
+                           recovery_codes=codes)
+
+
+def _reconfirm() -> str:
+    """Password and a current code (or recovery code), or the reason they didn't check out."""
+    s = site()
+    if not s.db.check_password(g.session.user_id, request.form.get("password", "")):
+        return "Your password is wrong."
+    if not s.db.check_second_factor(g.session.user_id, request.form.get("code", "")[:64]):
+        return "That code didn't work."
+    return ""
+
+
+@bp.post("/account/2fa/disable")
+def twofa_disable():
+    s = site()
+    if not g.session.mfa:
+        abort(400)
+    if current_app.extensions["ark_must_have_2fa"](g.session):
+        return _render_account(mfa_error="This site requires two-factor sign-in for your account, so it can't be "
+                                         "turned off. You can replace your recovery codes instead.")
+    problem = _reconfirm()
+    if problem:
+        return _render_account(mfa_error=problem)
+    s.db.disable_totp(g.session.user_id, client_ip(), user_agent())
+    g.session.mfa = False
+    return _render_account(notice_text="Two-factor sign-in is off.")
+
+
+@bp.post("/account/2fa/recovery")
+def twofa_recovery():
+    s = site()
+    if not g.session.mfa:
+        abort(400)
+    problem = _reconfirm()
+    if problem:
+        return _render_account(mfa_error=problem)
+    return _render_account(notice_text="New recovery codes made. The old ones no longer work.",
+                           recovery_codes=s.db.regenerate_recovery_codes(g.session.user_id))
 
 
 @bp.get("/account")

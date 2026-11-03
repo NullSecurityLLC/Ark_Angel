@@ -10,6 +10,8 @@ services:
     environment:
       ARK_ANGEL_ALLOW_HOST: ${DOMAIN:?set DOMAIN in .env}
       ARK_ANGEL_SITE_NAME: ${SITE_NAME:-ArkAngel}
+      # Who must use two-factor sign-in: admins (default), everyone, or off.
+      ARK_ANGEL_REQUIRE_2FA: ${REQUIRE_2FA:-admins}
       # Email notifications (optional; leave SMTP_HOST empty for none). See docs/deploy.md.
       ARK_ANGEL_SMTP_HOST: ${SMTP_HOST:-}
       ARK_ANGEL_SMTP_PORT: ${SMTP_PORT:-}

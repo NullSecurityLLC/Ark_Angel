@@ -388,6 +388,7 @@ Security, in brief:
 
 - Sessions are server-side; the browser holds only a random token and the database keeps its hash.
 - Passwords are hashed with scrypt, and repeated failed sign-ins lock the account or address out.
+- Two-factor sign-in with any authenticator app, plus one-time recovery codes. It's required for admins by default; `--require-2fa everyone` (or `REQUIRE_2FA` in `.env`) extends it to every member.
 - Every form has a CSRF token, and requests for the wrong host name are refused.
 - Pages run no JavaScript and carry a strict Content-Security-Policy.
 - The container runs unprivileged on a read-only filesystem.

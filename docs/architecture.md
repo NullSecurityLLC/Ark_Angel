@@ -64,6 +64,9 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
     cookie, so it needs no CSRF exemption. It reuses `browse_server`'s capture matching and writes
     under the case lock. The workspace's Recorder tab issues and revokes tokens, and the Trail tab
     renders `analysis/trail.py`.
+  - `totp.py`: RFC 6238 codes (stdlib HMAC), otpauth links and the setup QR code as an SVG data URI (segno).
+    `db.py` keeps the challenge between the password and the code, replay protection and hashed recovery codes,
+    and `app.py`'s guard holds anyone who must have two-factor but hasn't set it up on their account page.
   - `notify.py`: email notifications over SMTP (TLS required) from a background thread, throttled per person;
     messages carry links only, never case content.
   - `backup.py`: read-only snapshot, age encryption, rclone upload and pruning, and a restore that

@@ -28,6 +28,12 @@ docker compose run --rm app ark-angel web create-admin YOURNAME   # asks for a p
 
 Open `https://YOUR-DOMAIN/` and sign in. Until an admin exists the site waits instead of serving pages. There's deliberately no first-run setup page, because whoever reached it first would own the site.
 
+Admins have to set up two-factor sign-in on their first visit: scan the QR code with an authenticator app (1Password, Bitwarden, Google Authenticator, Authy, Aegis…) and save the recovery codes. Until they do, the account page is the only page that opens. Set `REQUIRE_2FA=everyone` in `.env` to require it for members too, or `off` to make it optional. If someone loses both their phone and their recovery codes, check it's really them, then run:
+
+```bash
+docker compose run --rm app ark-angel web reset-2fa THEIRNAME
+```
+
 ## Day to day
 
 Most work happens in the browser under **Admin**:
@@ -149,7 +155,8 @@ Data stays in the volume across updates.
 
 - **Accounts.** There's no open sign-up: every account and every public profile is approved by an admin.
 - **Sessions.** Sessions are server-side and expire after 30 minutes idle or 12 hours. Signing out, changing the password or disabling the account ends them.
-- **Sign-in.** Passwords are hashed with scrypt. 5 failed sign-ins for a username, or 20 from one address, lock it for 15 minutes.
+- **Sign-in.** Passwords are hashed with scrypt. 5 failed sign-ins for a username, or 20 from one address, lock it for 15 minutes. Wrong two-factor codes count toward the same limits.
+- **Two-factor.** Authenticator codes (RFC 6238, with one step of clock drift and no code accepted twice) or single-use recovery codes, which are stored hashed. The right password alone never opens a session: it gets a 5-minute, 5-attempt challenge in an HttpOnly cookie. Turning two-factor on signs out every other session. Turning it off or replacing recovery codes asks for the password and a current code again, and anyone the site requires it of can't turn it off. Required for admins by default (`REQUIRE_2FA`). The secrets live in the site database, which is owner-only and covered by the encrypted backups.
 - **Forms.** Every form has a CSRF token. Cross-site posts and unexpected host names are refused.
 - **Spam.** Tips and sign-ups are rate limited per visitor, using a keyed hash of their address that is never stored in readable form and is kept for 24 hours.
 - **Browser recording.** `/api/recorder` takes the ArkAngel Recorder extension's captures. It never reads the session cookie, only a per-case bearer token that a member makes on the case's Recorder page. The token is shown once, stored as a SHA-256 hash, and expires after 7, 30 or 90 days. Each member can hold 5 per case, and the owner can revoke anyone's. Every request checks again that the account is active and still an editor or owner of that case. Requests from web pages (a non-extension `Origin`) are refused, captures are capped at 2 MB and 1,200 per token per hour, and they're written under the case lock like tips and uploads. Caddy needs nothing extra.

@@ -1140,6 +1140,21 @@ def web_delete_user(obj, username: str) -> None:
     click.echo(f"Deleted {username.strip().lower()!r}")
 
 
+@web_group.command("reset-2fa")
+@click.argument("username")
+@click.confirmation_option(prompt="Turn off two-factor sign-in for this account and sign it out everywhere?")
+@click.pass_obj
+def web_reset_2fa(obj, username: str) -> None:
+    """Turn off two-factor sign-in for someone who lost their phone and their recovery codes.
+
+    Check it's really them first (a call, in person): this is exactly what an
+    attacker with their password would ask for. They sign in with the password
+    and, if the site requires it, set two-factor up again straight away.
+    """
+    obj.db.reset_totp(username)
+    click.echo(f"Two-factor sign-in is off for {username.strip().lower()!r}, and it's signed out everywhere.")
+
+
 @web_group.command("import-case")
 @click.argument("case_id")
 @click.option("--owner", required=True, help="Username that will own the case on the site.")
@@ -1311,11 +1326,14 @@ def web_restore(obj, archive: str, force: bool) -> None:
 @click.option("--site-name", default="ArkAngel", show_default=True, envvar="ARK_ANGEL_SITE_NAME",
               help="Name shown in the header and titles (or $ARK_ANGEL_SITE_NAME).")
 @click.option("--threads", type=int, default=8, show_default=True)
+@click.option("--require-2fa", "require_2fa", type=click.Choice(["admins", "everyone", "off"]), default="admins",
+              show_default=True, envvar="ARK_ANGEL_REQUIRE_2FA",
+              help="Who must set up two-factor sign-in before using the site (or $ARK_ANGEL_REQUIRE_2FA).")
 @click.option("--wait-for-admin", is_flag=True,
               help="With no admin yet, wait for one to be created instead of exiting (used by the Docker image).")
 @click.pass_obj
 def web_serve(obj, host: str, port: int, allow_hosts: tuple, behind_proxy: bool, proxy_ip: str, site_name: str,
-              threads: int, wait_for_admin: bool) -> None:
+              threads: int, require_2fa: str, wait_for_admin: bool) -> None:
     """Start the website. By default only this computer can reach it."""
     try:
         import waitress
@@ -1342,11 +1360,14 @@ def web_serve(obj, host: str, port: int, allow_hosts: tuple, behind_proxy: bool,
 
     mailer = mailer_from_env(os.environ)
     app = create_app(store, db, allowed_hosts=(*LOCAL_HOSTS, *allow_hosts), secure_cookies=behind_proxy,
-                     site_name=site_name, mailer=mailer)
+                     site_name=site_name, mailer=mailer, require_2fa=require_2fa)
     shown = f"[{host}]" if ":" in host else host
     click.echo(f"{site_name} website on http://{shown}:{port}/" + (" (behind your HTTPS proxy)" if behind_proxy else ""))
     click.echo(f"Email notifications: on, via {mailer.config.host}:{mailer.config.port}" if mailer.enabled
                else "Email notifications: off (set ARK_ANGEL_SMTP_HOST to turn them on)")
+    click.echo({"admins": "Two-factor sign-in: required for admins",
+                "everyone": "Two-factor sign-in: required for everyone",
+                "off": "Two-factor sign-in: optional (--require-2fa off)"}[require_2fa])
     click.echo("Ctrl+C to stop.")
     proxy = {"trusted_proxy": proxy_ip, "trusted_proxy_count": 1,
              "trusted_proxy_headers": {"x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"}} \

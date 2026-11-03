@@ -32,7 +32,7 @@ class Site:
         self.clock = Clock()
         self.db = SiteDB(tmp_path / "web.db", clock=self.clock)
         self.db.create_user("boss", PASSWORD, role="admin", status="active")
-        self.app = create_app(self.store, self.db)
+        self.app = create_app(self.store, self.db, require_2fa="off")  # 2FA has its own tests
         self.app.config["TESTING"] = True
 
     def client(self):

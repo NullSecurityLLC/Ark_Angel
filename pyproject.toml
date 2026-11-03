@@ -26,6 +26,7 @@ classifiers = [
 [project.optional-dependencies]
 web = [
     "Flask>=3.0",
+    "segno>=1.6",
     "waitress>=3.0.1",
 ]
 

@@ -15,7 +15,7 @@ from flask import Blueprint, abort, current_app, g, redirect, render_template, r
 from ark_angel.models import Evidence
 from ark_angel.web import notify
 from ark_angel.web.app import client_ip, safe_next, site, user_agent
-from ark_angel.web.db import AuthError
+from ark_angel.web.db import MFA_TIMEOUT_S, AuthError, MfaChallenge
 from ark_angel.web.site import UploadError, save_evidence_photo
 
 bp = Blueprint("public", __name__)
@@ -25,7 +25,9 @@ SIGNUP_LIMIT = (3, 3600)
 MAX_PENDING_SIGNUPS = 200
 MAX_TIP_PHOTO = 10 * 1024 * 1024
 TIP_SOURCE = "web_tips"
-LOGIN_NOTICES = {"reauth": "Password changed. Sign in with the new one."}
+LOGIN_NOTICES = {"reauth": "Password changed. Sign in with the new one.",
+                 "restart": "That sign-in timed out or had too many wrong codes. Enter your password again."}
+MFA_COOKIE = "ark_mfa"
 _TIP_FIELDS = {"what": 5000, "when": 120, "where": 200, "contact_name": 120, "contact_phone": 60,
                "contact_email": 200}
 
@@ -182,11 +184,43 @@ def login():
     error, status = "", 200
     if request.method == "POST":
         try:
-            session = site().db.authenticate(request.form.get("username", ""), request.form.get("password", ""),
-                                             client_ip(), user_agent())
+            result = site().db.authenticate(request.form.get("username", ""), request.form.get("password", ""),
+                                            client_ip(), user_agent())
         except AuthError as exc:
             error, status = str(exc), 401
         else:
-            return current_app.extensions["ark_start_session"](redirect(target), session.token)
+            if isinstance(result, MfaChallenge):
+                # Right password, but no session yet: the code comes next, within 5 minutes, in this browser.
+                resp = redirect(url_for("public.login_code", next=target))
+                resp.set_cookie(MFA_COOKIE, result.token, max_age=MFA_TIMEOUT_S, httponly=True, samesite="Strict",
+                                secure=current_app.config["SECURE_COOKIES"], path="/login")
+                return resp
+            return current_app.extensions["ark_start_session"](redirect(target), result.token)
     notice = LOGIN_NOTICES.get(request.args.get("notice", ""), "")
     return render_template("login.html", error=error, next=target, notice=notice), status
+
+
+@bp.route("/login/code", methods=["GET", "POST"])
+def login_code():
+    target = safe_next(request.values.get("next"))
+    if g.session is not None:
+        return redirect(target)
+    challenge = request.cookies.get(MFA_COOKIE, "")
+    username = site().db.mfa_pending(challenge)
+    if username is None:
+        return redirect(url_for("public.login", next=target))
+    error, status = "", 200
+    if request.method == "POST":
+        try:
+            session = site().db.verify_mfa(challenge, request.form.get("code", "")[:64], client_ip(), user_agent())
+        except AuthError as exc:
+            error, status = str(exc), 401
+            if site().db.mfa_pending(challenge) is None:  # used up or timed out: back to the password
+                resp = redirect(url_for("public.login", next=target, notice="restart"))
+                resp.delete_cookie(MFA_COOKIE, path="/login")
+                return resp
+        else:
+            resp = current_app.extensions["ark_start_session"](redirect(target), session.token)
+            resp.delete_cookie(MFA_COOKIE, path="/login")
+            return resp
+    return render_template("login_code.html", username=username, error=error, next=target), status
