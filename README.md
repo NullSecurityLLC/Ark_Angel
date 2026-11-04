@@ -88,8 +88,34 @@ The executables aren't code-signed yet, so the OS will warn you the first time:
 - **Windows**: SmartScreen says "Windows protected your PC". Click *More info*, then *Run anyway*.
 - **macOS**: run `xattr -d com.apple.quarantine ark-angel-macos-arm64` once, or right-click, *Open*, then *Open* again.
 
-Check your download against `SHA256SUMS.txt` on the release page
-(`sha256sum -c SHA256SUMS.txt --ignore-missing`, or `Get-FileHash` on Windows).
+### Is this the real ArkAngel?
+
+ArkAngel handles tips about missing people and the addresses of people in hiding. A tampered copy
+would be a serious weapon, so check before you run it. Every file on an official release is signed
+by GitHub as built by this repository's release workflow, from that release's commit. A copy built
+anywhere else can't get that signature, whatever it calls itself. With the
+[GitHub CLI](https://cli.github.com/):
+
+```bash
+gh attestation verify ark-angel-linux-x86_64 --repo NullSecurityLLC/Ark_Angel
+```
+
+It should end with `✓ Verification succeeded!`. If it doesn't, don't run the file, and please
+[report where you got it](https://github.com/NullSecurityLLC/Ark_Angel/security/advisories/new).
+This works the same for the Windows and macOS executables, the wheel, the source archive and
+`ark-angel-recorder.zip`.
+
+- **Only download from** [github.com/NullSecurityLLC/Ark_Angel/releases](https://github.com/NullSecurityLLC/Ark_Angel/releases).
+  Mirrors, "cracked" builds and files sent in chats aren't ArkAngel, even if they look like it.
+- `SHA256SUMS.txt` on the release page only proves a download wasn't corrupted
+  (`sha256sum -c SHA256SUMS.txt --ignore-missing`, or `Get-FileHash` on Windows). Someone running a
+  fake download page can publish checksums for their own files. The attestation is what proves where
+  a file came from.
+- **A website that calls itself ArkAngel isn't official because it says so.** Anyone can run the
+  software, so before sending a tip, check with the police department handling the case that the
+  site is one they're working with.
+- Forks are welcome under the license, but they must use their own name and logo. See
+  [TRADEMARKS.md](TRADEMARKS.md).
 
 **With Python 3.10+**, install it as a command with [pipx](https://pipx.pypa.io/):
 
