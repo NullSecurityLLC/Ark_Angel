@@ -66,8 +66,10 @@ def _host_only(host: str) -> str:
 
 
 def safe_next(target: Optional[str]) -> str:
-    """Only same-site paths: no scheme, no host, no ``//`` or backslash tricks."""
-    if not target or not target.startswith("/") or target.startswith("//") or "\\" in target:
+    """Only same-site paths: no scheme, no host, no ``//`` or backslash tricks, no whitespace or control
+    characters (browsers drop tabs and newlines from URLs, which turns ``/\t/evil`` into ``//evil``)."""
+    if (not target or not target.startswith("/") or target.startswith("//") or "\\" in target
+            or len(target) > 2000 or any(ch.isspace() or not ch.isprintable() for ch in target)):
         return "/app/"
     parts = urlsplit(target)
     return target if not parts.scheme and not parts.netloc else "/app/"

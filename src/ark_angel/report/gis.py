@@ -17,6 +17,8 @@ import math
 import xml.etree.ElementTree as ET  # nosec B405: only builds XML, never parses untrusted input
 from typing import Any, Optional, Sequence
 
+from ark_angel.textsafe import csv_cell, no_markup
+
 KML_NS = "http://www.opengis.net/kml/2.2"
 _ICONS = "https://maps.google.com/mapfiles/kml/shapes/"
 # KML colours are aabbggrr. Amber matches the HTML report's accent.
@@ -56,6 +58,9 @@ def circle(lat: float, lon: float, radius_m: float, steps: int = 48) -> list[tup
                                 math.cos(d) - math.sin(phi) * math.sin(phi2))
         ring.append((round(math.degrees(lmb2), 6), round(math.degrees(phi2), 6)))
     return ring
+
+
+_LINK_PROPS = {"google_maps", "street_view", "osm"}  # URLs we build ourselves
 
 
 def _features(report: dict[str, Any], canvass: Sequence[dict[str, Any]], include_content: bool) -> list[dict]:
@@ -126,6 +131,12 @@ def _features(report: dict[str, Any], canvass: Sequence[dict[str, Any]], include
                           "facing_spot": _FACING_WORDS[cam["facing"]],
                           "osm": cam["osm_url"], "street_view": street_view_url(cam["latitude"], cam["longitude"])},
             })
+    # Pin names and details include tip text and OpenStreetMap tags, and Google Earth and geojson.io show them
+    # as HTML. Neutralize markup (and control characters, which also make KML invalid) in everything but our links.
+    for feature in features:
+        feature["name"] = no_markup(feature["name"])
+        feature["props"] = {key: no_markup(value) if isinstance(value, str) and key not in _LINK_PROPS else value
+                            for key, value in feature["props"].items()}
     return features
 
 
@@ -203,9 +214,9 @@ def render_canvass_csv(canvass: Sequence[dict[str, Any]]) -> str:
                      "notes"])
     for target in canvass:
         for cam in target["cameras"]:
-            writer.writerow([target["label"], target["lead_rank"] or "", target["latest"], cam["kind"],
-                             cam["operator"], cam["zone"], cam["distance_m"],
-                             _FACING_WORDS[cam["facing"]], cam["latitude"],
-                             cam["longitude"], cam["osm_url"], street_view_url(cam["latitude"], cam["longitude"]),
-                             "", "", ""])
+            # Operator and zone come from OpenStreetMap, which anyone can edit: no cell may run as a formula.
+            writer.writerow([csv_cell(cell) for cell in (
+                target["label"], target["lead_rank"] or "", target["latest"], cam["kind"],
+                cam["operator"], cam["zone"], cam["distance_m"], _FACING_WORDS[cam["facing"]], cam["latitude"],
+                cam["longitude"], cam["osm_url"], street_view_url(cam["latitude"], cam["longitude"]), "", "", "")])
     return buffer.getvalue()

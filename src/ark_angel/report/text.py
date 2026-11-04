@@ -6,6 +6,7 @@ from typing import Any
 
 from ark_angel.report.gis import google_maps_url, street_view_url
 from ark_angel.style import PLAIN, Style
+from ark_angel.textsafe import md, md_url, printable_tree
 
 
 def review_line(lead: dict[str, Any]) -> str:
@@ -40,6 +41,7 @@ def top_score(report: dict[str, Any]) -> float:
 def lead_lines(lead: dict[str, Any], top: float, style: Style = PLAIN, reasons: int | None = None,
                label: str | None = None) -> list[str]:
     """One lead as an aligned row (number, score, bar, finding), its review state and its reasons."""
+    lead = printable_tree(lead)  # evidence text must not carry terminal escape sequences
     label = label or f"#{lead['rank']}"
     lines = [f"  {style.accent(f'{label:<5}')}{lead['score']:5.1f}  {style.bar(lead['score'], top)}  "
              f"{style.strong(lead['summary'])}"]
@@ -52,7 +54,7 @@ def lead_lines(lead: dict[str, Any], top: float, style: Style = PLAIN, reasons: 
 
 
 def case_header(report: dict[str, Any], style: Style = PLAIN) -> list[str]:
-    case = report["case"]
+    case = printable_tree(report["case"])
     dot = style.dot
     opened = case["created_at"][:16].replace("T", " ")
     return [
@@ -66,6 +68,7 @@ def case_header(report: dict[str, Any], style: Style = PLAIN) -> list[str]:
 def render_text(report: dict[str, Any], limit: int | None = None, reasons: bool = True,
                 show_dismissed: bool = False, style: Style = PLAIN) -> str:
     """The case report for a terminal (pass ``terminal_style()``) or a plain file (default)."""
+    report = printable_tree(report)
     lines = case_header(report, style)
     if report["timeline"]:
         latest = report["timeline"][-1]
@@ -97,12 +100,13 @@ def render_text(report: dict[str, Any], limit: int | None = None, reasons: bool 
 
 
 def render_markdown(report: dict[str, Any]) -> str:
+    """Markdown with every piece of evidence text escaped: a tip can't plant a link, a tracking image or HTML."""
     case = report["case"]
     out = [
-        f"# {case['title']} ({case['identifier']})",
+        f"# {md(case['title'])} ({md(case['identifier'])})",
         "",
-        f"Opened {case['created_at']} · {case['evidence_count']} evidence items · "
-        f"sources: {', '.join(case['sources']) or 'none'}",
+        f"Opened {md(case['created_at'])} · {case['evidence_count']} evidence items · "
+        f"sources: {md(', '.join(case['sources'])) or 'none'}",
         "",
     ]
     for title, status in (("Verified", "verified"), ("Ranked leads", "open"), ("Dismissed", "dismissed")):
@@ -111,25 +115,26 @@ def render_markdown(report: dict[str, Any]) -> str:
             continue
         out += [f"## {title}", ""]
         for lead in leads:
-            out.append(f"{lead['rank']}. **[{lead['score']:.1f}] {lead['summary']}**")
+            out.append(f"{lead['rank']}. **\\[{lead['score']:.1f}\\] {md(lead['summary'])}**")
             if review_line(lead):
-                out.append(f"   - *{review_line(lead)}*")
-            out += [f"   - {reason}" for reason in lead["reasons"]]
+                out.append(f"   - *{md(review_line(lead))}*")
+            out += [f"   - {md(reason)}" for reason in lead["reasons"]]
         out.append("")
     if report["clusters"]:
         out += ["", "## Location clusters", "", "| Centre | Items | Spread | Map |", "|---|---|---|---|"]
         for c in report["clusters"]:
             lat, lon = c["latitude"], c["longitude"]
             out.append(f"| {lat:.5f}, {lon:.5f} | {len(c['points'])} | {c['radius_m']} m | "
-                       f"[Google]({google_maps_url(lat, lon)}) · [Street View]({street_view_url(lat, lon)}) |")
+                       f"[Google]({md_url(google_maps_url(lat, lon))}) · "
+                       f"[Street View]({md_url(street_view_url(lat, lon))}) |")
     if report["timeline"]:
         out += ["", "## Timeline", ""]
-        out += [f"- `{e['when']}` **{e['source']}**: {e['text']}" for e in report["timeline"]]
+        out += [f"- `{e['when']}` **{md(e['source'])}**: {md(e['text'])}" for e in report["timeline"]]
     if report["entities"]:
         out += ["", "## Entity index", "", "| Kind | Value | Seen in |", "|---|---|---|"]
         for e in report["entities"]:
-            seen = ", ".join(m["evidence_id"] for m in e["mentions"])
-            out.append(f"| {e['kind']} | `{e['value']}` | {seen} |")
+            seen = ", ".join(md(m["evidence_id"]) for m in e["mentions"])
+            out.append(f"| {md(e['kind'])} | {md(e['value'])} | {seen} |")
     return "\n".join(out) + "\n"
 
 

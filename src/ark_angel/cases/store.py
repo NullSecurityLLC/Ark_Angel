@@ -73,15 +73,30 @@ class FileCaseStore(CaseStore):
         return self.data_dir / f"{case_id}.json"
 
     def _write(self, case: Case) -> None:
-        """Write via a temporary file and a rename, so a crash mid-write never leaves half a case."""
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        """Write via a temporary file and a rename, so a crash mid-write never leaves half a case.
+
+        Owner-only (0600 in a 0700 folder): cases hold tippers' contact details and, in defender cases, a
+        protected person's addresses. Other accounts on the same machine have no business reading them.
+        """
+        self.data_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         path = self._path(case.identifier)
         tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
         try:
-            tmp.write_text(json.dumps(_case_to_dict(case), indent=2), encoding="utf-8")
+            write_private(tmp, json.dumps(_case_to_dict(case), indent=2).encode("utf-8"))
             os.replace(tmp, path)
         finally:
             tmp.unlink(missing_ok=True)
+
+
+def write_private(path: Path, data: bytes) -> None:
+    """Write ``data`` to a new file only its owner can read (permissions are a no-op on Windows)."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+    try:
+        os.chmod(path, 0o600)  # O_CREAT's mode doesn't apply to a file that already existed
+    except OSError:
+        pass
 
 
 def _upsert(existing: list[_T], incoming: Iterable[_T]) -> list[_T]:

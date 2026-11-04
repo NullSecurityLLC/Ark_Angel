@@ -1,6 +1,7 @@
 """Shared EXIF helpers: loading tags and converting GPS coordinates."""
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 
@@ -44,10 +45,17 @@ def exif_metadata(exif: dict) -> dict:
 
 
 def dms_to_decimal(dms: tuple, ref: str) -> float:
-    """Convert EXIF degree/minute/second rationals to signed decimal degrees."""
-    d = dms[0][0] / dms[0][1]
-    m = dms[1][0] / dms[1][1] / 60
-    s = dms[2][0] / dms[2][1] / 3600
+    """Convert EXIF degree/minute/second rationals to signed decimal degrees.
+
+    Raises:
+        ValueError: anything that isn't three well-formed rationals (EXIF comes from strangers' photos).
+    """
+    try:
+        d = dms[0][0] / dms[0][1]
+        m = dms[1][0] / dms[1][1] / 60
+        s = dms[2][0] / dms[2][1] / 3600
+    except (ZeroDivisionError, TypeError, IndexError) as exc:
+        raise ValueError(f"malformed GPS rational: {exc.__class__.__name__}") from None
     val = d + m + s
     return -val if ref in ("S", "W") else val
 
@@ -62,10 +70,15 @@ def decimal_to_dms(value: float) -> tuple:
     return ((degrees, 1), (minutes, 1), (seconds, 100))
 
 
+MAX_TAG_CHARS = 100  # Make, Model and timestamps are short; a 64 KB "camera model" is someone being clever
+
+
 def _text(value) -> str:
     if isinstance(value, bytes):
-        return value.decode(errors="replace").strip("\x00").strip()
-    return str(value).strip() if value else ""
+        value = value.decode(errors="replace")
+    text = str(value).strip("\x00").strip() if value else ""
+    # Control characters can't be in a real camera name, and would reach terminals and reports.
+    return "".join(ch for ch in text if ch.isprintable())[:MAX_TAG_CHARS]
 
 
 def gps_from_exif(exif: dict) -> Optional[tuple[float, float]]:
@@ -79,7 +92,13 @@ def gps_from_exif(exif: dict) -> Optional[tuple[float, float]]:
     lon_ref = gps.get(piexif.GPSIFD.GPSLongitudeRef)
     if not (lat_data and lon_data and lat_ref and lon_ref):
         return None
-    return dms_to_decimal(lat_data, _text(lat_ref)), dms_to_decimal(lon_data, _text(lon_ref))
+    try:
+        lat, lon = dms_to_decimal(lat_data, _text(lat_ref)), dms_to_decimal(lon_data, _text(lon_ref))
+    except ValueError:
+        return None  # a broken GPS block is no GPS, not a crash (photos arrive from anonymous tippers)
+    if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
+        return None
+    return lat, lon
 
 
 def device_from_exif(exif: dict) -> str:

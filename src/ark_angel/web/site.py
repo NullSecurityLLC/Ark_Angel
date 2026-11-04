@@ -12,7 +12,7 @@ from typing import Any, Iterator, Optional
 
 from PIL import Image, ImageOps
 
-from ark_angel.cases.store import CASE_ID_PATTERN, FileCaseStore
+from ark_angel.cases.store import CASE_ID_PATTERN, FileCaseStore, write_private
 from ark_angel.web.db import SiteDB
 
 IMAGE_FORMATS = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp"}
@@ -108,9 +108,11 @@ def save_profile_photo(site: Site, data: bytes) -> str:
     image = ImageOps.exif_transpose(image)
     image = image.convert("RGB")
     image.thumbnail((PROFILE_PHOTO_MAX, PROFILE_PHOTO_MAX))
-    site.media_dir.mkdir(parents=True, exist_ok=True)
+    site.media_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     name = f"{secrets.token_hex(16)}.jpg"
-    image.save(site.media_dir / name, "JPEG", quality=85, optimize=True)
+    buffer = io.BytesIO()
+    image.save(buffer, "JPEG", quality=85, optimize=True)
+    write_private(site.media_dir / name, buffer.getvalue())
     return name
 
 
@@ -118,9 +120,9 @@ def save_evidence_photo(site: Site, case_id: str, data: bytes) -> Path:
     """Keep an evidence photo byte-for-byte (its EXIF GPS and time are the point), after checking it is one."""
     _, ext = read_image(data)
     folder = site.uploads_dir(case_id)
-    folder.mkdir(parents=True, exist_ok=True)
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = folder / f"photo-{secrets.token_hex(8)}{ext}"
-    path.write_bytes(data)
+    write_private(path, data)
     return path
 
 
@@ -130,9 +132,9 @@ def save_upload(site: Site, case_id: str, filename: str, data: bytes) -> Path:
 
     name = secure_filename(filename) or "upload.txt"
     folder = site.uploads_dir(case_id) / secrets.token_hex(6)
-    folder.mkdir(parents=True, exist_ok=True)
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = folder / name
-    path.write_bytes(data)
+    write_private(path, data)
     return path
 
 

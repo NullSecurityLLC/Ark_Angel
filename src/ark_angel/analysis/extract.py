@@ -12,7 +12,9 @@ from typing import Callable, Optional
 from ark_angel.models import Entity
 
 URL_PATTERN = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
-EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+# Every repetition is bounded and the local part starts only at a token boundary. Unbounded runs here made a
+# 300,000-character page take minutes to scan (each start position re-read the rest of a long token).
+EMAIL_PATTERN = re.compile(r"(?<![\w.+-])[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,8}")
 DATETIME_PATTERN = re.compile(r"\b(\d{4})[-:/](\d{2})[-:/](\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?\b")
 COORDS_PATTERN = re.compile(r"(?<![\d.])(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})(?![\d.])")
 PLATE_PATTERN = re.compile(
@@ -26,7 +28,7 @@ HANDLE_KEYWORD_PATTERN = re.compile(
     r"([A-Za-z0-9_](?:[A-Za-z0-9_.]{1,28}[A-Za-z0-9_]))",
     re.IGNORECASE,
 )
-PHONE_PATTERN = re.compile(r"(?<![\w])\+?\(?\d[\d\-.\s()]{7,}\d(?![\w])")
+PHONE_PATTERN = re.compile(r"(?<![\w])\+?\(?\d[\d\-.\s()]{7,24}\d(?![\w])")
 
 # Words that follow "account"/"handle" in ordinary prose and are not handles.
 _HANDLE_STOPWORDS = {"is", "was", "the", "for", "and", "with", "unknown", "number", "name"}

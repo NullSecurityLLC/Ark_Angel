@@ -162,6 +162,8 @@ Data stays in the volume across updates.
 - **Browser recording.** `/api/recorder` takes the ArkAngel Recorder extension's captures. It never reads the session cookie, only a per-case bearer token that a member makes on the case's Recorder page. The token is shown once, stored as a SHA-256 hash, and expires after 7, 30 or 90 days. Each member can hold 5 per case, and the owner can revoke anyone's. Every request checks again that the account is active and still an editor or owner of that case. Requests from web pages (a non-extension `Origin`) are refused, captures are capped at 2 MB and 1,200 per token per hour, and they're written under the case lock like tips and uploads. Caddy needs nothing extra.
 - **Photos.** Public profile photos are re-encoded with all metadata removed. Evidence photos keep their GPS for analysis and are only ever shown to the case team.
 - **Browsers.** Pages run no scripts at all under a strict Content-Security-Policy, with HSTS, no framing and no referrers.
+- **Data at rest.** The site database, case files and uploads are owner-only (`0600` files in `0700` folders). Backups are encrypted.
+- **Untrusted content.** Tips, uploads and recorded pages are escaped for every output: HTML, Markdown, CSV, KML and terminal. Malformed photo metadata is ignored and never costs a tip. URLs recorded by the browser extension have tokens and sign-in codes removed. See SECURITY.md.
 - **The container.** It runs as an unprivileged user on a read-only filesystem, with every Linux capability dropped.
 
 ## Running without Docker

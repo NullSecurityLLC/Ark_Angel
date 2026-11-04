@@ -1,9 +1,11 @@
 """Check username existence across public platforms."""
 from __future__ import annotations
 
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Optional, Sequence
+from urllib.parse import quote
 
 import requests
 
@@ -50,9 +52,22 @@ SITES: dict[str, Site] = {
 }
 
 
+# Handles can come from evidence (`pivot`), which strangers write: only plain handle characters reach a URL.
+USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_](?:[A-Za-z0-9_.-]{0,38}[A-Za-z0-9_])?$")
+
+
+def valid_username(username: str) -> str:
+    """The username without a leading ``@``. Raises ValueError for anything that isn't a plain handle."""
+    name = username.strip().lstrip("@")
+    if not USERNAME_PATTERN.match(name) or ".." in name:
+        raise ValueError(f"{username!r} isn't a username (letters, digits, '_', '.', '-'; up to 40)")
+    return name
+
+
 def _probe(site_name: str, site: Site, username: str) -> Optional[UsernameHit]:
     try:
-        resp = requests.get(site.url.format(username), headers=_HEADERS, timeout=_TIMEOUT, allow_redirects=True)
+        resp = requests.get(site.url.format(quote(username, safe="")), headers=_HEADERS, timeout=_TIMEOUT,
+                            allow_redirects=True)
     except requests.RequestException:
         return None
     if resp.status_code != 200:
@@ -70,7 +85,7 @@ class UsernameIngestionSource(IngestionSource):
     """
 
     def check(self, identifier: str) -> list[UsernameHit]:
-        username = identifier.lstrip("@")
+        username = valid_username(identifier)
         with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
             results = pool.map(lambda item: _probe(item[0], item[1], username), SITES.items())
         return [hit for hit in results if hit]

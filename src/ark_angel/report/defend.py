@@ -9,6 +9,7 @@ from ark_angel.models import Case
 from ark_angel.report.build import build_report
 from ark_angel.report.text import lead_lines, review_line, top_score
 from ark_angel.style import PLAIN, Style
+from ark_angel.textsafe import md, printable_tree
 
 _FIX = "Fix: "
 _INDENT = " " * 26  # under a lead row's summary, like the case report
@@ -49,6 +50,7 @@ def _split(brief: dict[str, Any]) -> tuple[list, list, list]:
 
 def render_brief_text(brief: dict[str, Any], style: Style = PLAIN, reasons: bool = True,
                       show_dismissed: bool = False) -> str:
+    brief = printable_tree(brief)
     p, risk, case = brief["principal"], brief["risk"], brief["case"]
     dot = style.dot
     lines = [
@@ -84,9 +86,9 @@ def render_brief_text(brief: dict[str, Any], style: Style = PLAIN, reasons: bool
 
 def render_brief_markdown(brief: dict[str, Any]) -> str:
     p, risk, case = brief["principal"], brief["risk"], brief["case"]
-    out = [f"# {case['title']} ({case['identifier']})", "",
-           f"**Risk: {risk['level']}**: {risk['why']}", "",
-           f"Protecting **{p['name']}**, authorized by {p['authorized_by']}. "
+    out = [f"# {md(case['title'])} ({md(case['identifier'])})", "",
+           f"**Risk: {risk['level']}**: {md(risk['why'])}", "",
+           f"Protecting **{md(p['name'])}**, authorized by {md(p['authorized_by'])}. "
            f"{case['evidence_count']} evidence items, {len(p['sensitive_places'])} sensitive places.", ""]
     threats, exposures, dismissed = _split(brief)
     for title, leads in (("Threats", threats), ("Exposures", exposures), ("Dismissed / remediated", dismissed)):
@@ -96,11 +98,11 @@ def render_brief_markdown(brief: dict[str, Any]) -> str:
         if not leads:
             out += ["None found.", ""]
         for lead in leads:
-            out.append(f"{lead['rank']}. **[{lead['score']:.1f}] {lead['summary']}**")
+            out.append(f"{lead['rank']}. **\\[{lead['score']:.1f}\\] {md(lead['summary'])}**")
             if review_line(lead):
-                out.append(f"   - *{review_line(lead)}*")
-            out += [f"   - {reason}" for reason in lead["reasons"] if not reason.startswith(_FIX)]
-            out += [f"   - **Fix:** {fix}" for fix in lead["fixes"]]
+                out.append(f"   - *{md(review_line(lead))}*")
+            out += [f"   - {md(reason)}" for reason in lead["reasons"] if not reason.startswith(_FIX)]
+            out += [f"   - **Fix:** {md(fix)}" for fix in lead["fixes"]]
         out.append("")
     return "\n".join(out) + "\n"
 

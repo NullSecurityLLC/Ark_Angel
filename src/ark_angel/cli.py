@@ -9,8 +9,14 @@ import click
 from ark_angel import __version__, pipeline
 from ark_angel.cases.store import CaseNotFoundError, FileCaseStore
 from ark_angel.models import Case, Place
+from ark_angel.textsafe import printable, terminal_safe
 
 DEFAULT_DATA_DIR = ".ark_angel/cases"
+
+
+def echo(message="", **kwargs) -> None:
+    """``click.echo`` that can't be made to emit terminal control sequences by evidence text (see textsafe)."""
+    click.echo(terminal_safe(message) if isinstance(message, str) else message, **kwargs)
 
 
 class _Group(click.Group):
@@ -54,7 +60,7 @@ def cli(ctx: click.Context, data_dir: str, no_color: bool) -> None:
 @cli.command("version")
 def show_version() -> None:
     """Show the current Ark Angel version."""
-    click.echo(__version__)
+    echo(__version__)
 
 
 @cli.group("case", help="Manage investigation cases.")
@@ -69,7 +75,7 @@ def case_group() -> None:
 def case_create(store: FileCaseStore, case_id: str, title: str) -> None:
     """Create a new case."""
     store.create_case(Case(identifier=case_id, title=title))
-    click.echo(f"Created case {case_id!r}: {title}")
+    echo(f"Created case {case_id!r}: {title}")
 
 
 @case_group.command("list")
@@ -77,7 +83,7 @@ def case_create(store: FileCaseStore, case_id: str, title: str) -> None:
 def case_list(store: FileCaseStore) -> None:
     """List known case identifiers."""
     for case_id in store.list_cases():
-        click.echo(case_id)
+        echo(case_id)
 
 
 @case_group.command("show")
@@ -86,11 +92,11 @@ def case_list(store: FileCaseStore) -> None:
 def case_show(store: FileCaseStore, case_id: str) -> None:
     """Show a case's title, evidence count, and lead count."""
     case = store.get_case(case_id)
-    click.echo(f"{case.identifier}: {case.title}")
+    echo(f"{case.identifier}: {case.title}")
     if case.principal is not None:
-        click.echo(f"  principal defender case protecting {case.principal.name} (`ark-angel defend show`)")
-    click.echo(f"  evidence: {len(case.evidence)}")
-    click.echo(f"  leads: {len(case.leads)}")
+        echo(f"  principal defender case protecting {case.principal.name} (`ark-angel defend show`)")
+    echo(f"  evidence: {len(case.evidence)}")
+    echo(f"  leads: {len(case.leads)}")
 
 
 @cli.command("ingest")
@@ -106,15 +112,15 @@ def ingest(store: FileCaseStore, case_id: str, source_file: str) -> None:
         from ark_angel.ingest.csv_source import CsvTipSource
 
         _report_csv(pipeline.ingest_csv(store, case_id, source_file, CsvTipSource()), case_id, dry_run=False)
-        click.echo("Columns were guessed from the header; use `ark-angel ingest-csv --dry-run` to check or override.")
+        echo("Columns were guessed from the header; use `ark-angel ingest-csv --dry-run` to check or override.")
         return
     evidence = pipeline.ingest_text(store, case_id, source_file)
-    click.echo(f"Ingested {len(evidence)} evidence item(s) into case {case_id!r}")
+    echo(f"Ingested {len(evidence)} evidence item(s) into case {case_id!r}")
     try:
         from ark_angel.ingest.chat_source import detect_format
 
         if detect_format(Path(source_file)) == "whatsapp":
-            click.echo("This looks like a WhatsApp export. `ark-angel ingest-chat` reads it per message, "
+            echo("This looks like a WhatsApp export. `ark-angel ingest-chat` reads it per message, "
                        "with senders and times.")
     except (ValueError, OSError):
         pass
@@ -122,24 +128,24 @@ def ingest(store: FileCaseStore, case_id: str, source_file: str) -> None:
 
 def _report_email(result, case_id: str) -> None:
     attached = len(result.evidence) - result.messages
-    click.echo(f"Imported {result.messages} email(s) into case {case_id!r}"
+    echo(f"Imported {result.messages} email(s) into case {case_id!r}"
                + (f", plus {attached} photo attachment(s) with EXIF ({result.attachments_with_gps} with GPS)"
                   if attached else ""))
     if result.skipped_attachments:
-        click.echo(f"  {result.skipped_attachments} image attachment(s) had no EXIF data")
+        echo(f"  {result.skipped_attachments} image attachment(s) had no EXIF data")
 
 
 def _report_csv(result, case_id: str, dry_run: bool) -> None:
     verb = "Would import" if dry_run else "Imported"
-    click.echo(f"{verb} {len(result.evidence)} tip(s) into case {case_id!r}: "
+    echo(f"{verb} {len(result.evidence)} tip(s) into case {case_id!r}: "
                f"{result.with_time} with a time, {result.with_coords} with coordinates")
-    click.echo(f"  columns: {result.mapping.describe()}")
+    echo(f"  columns: {printable(result.mapping.describe())}")
     problems = [(result.skipped_blank, "blank row(s) skipped"),
                 (result.unparsed_times, "time(s) not understood (kept in the text; try --dayfirst?)"),
                 (result.bad_coordinates, "row(s) with unusable coordinates")]
     for count, label in problems:
         if count:
-            click.echo(f"  {count} {label}")
+            echo(f"  {count} {label}")
 
 
 @cli.command("enrich")
@@ -153,12 +159,12 @@ def enrich(store: FileCaseStore, case_id: str) -> None:
     leads, analysis = pipeline.enrich(store, case_id)
     if store.get_case(case_id).principal is not None:
         threats = sum(1 for lead in leads if lead.identifier.startswith("threat-"))
-        click.echo(f"Generated {len(leads)} lead(s) for defender case {case_id!r} "
+        echo(f"Generated {len(leads)} lead(s) for defender case {case_id!r} "
                    f"({threats} threat, {len(leads) - threats} exposure/pattern). "
                    f"See `ark-angel defend brief {case_id}`.")
         return
     correlated = sum(1 for lead in leads if not lead.identifier.startswith("tag-"))
-    click.echo(f"Generated {len(leads)} lead(s) for case {case_id!r} "
+    echo(f"Generated {len(leads)} lead(s) for case {case_id!r} "
                f"({correlated} cross-source, {len(analysis.entity_index)} distinct entities)")
 
 
@@ -188,9 +194,9 @@ def report(store: FileCaseStore, case_id: str, fmt: str, out_path: str, top: int
     output = renderers[fmt]()
     if out_path:
         Path(out_path).write_text(output, encoding="utf-8")
-        click.echo(f"Wrote {fmt} report to {out_path}")
+        echo(f"Wrote {fmt} report to {out_path}")
     else:
-        click.echo(output)
+        echo(output)
 
 
 _MAP_FORMATS = {".kml": "kml", ".geojson": "geojson", ".json": "geojson"}
@@ -208,13 +214,13 @@ def _write_map(path: str, fmt: str, data: dict, canvass: list, include_content: 
 
     render = render_kml if fmt == "kml" else render_geojson
     Path(path).write_text(render(data, canvass, include_content=include_content), encoding="utf-8")
-    click.echo(f"Wrote {fmt.upper()} map to {path}")
+    echo(f"Wrote {fmt.upper()} map to {path}")
     if fmt == "kml":
-        click.echo("  Google My Maps: Create a new map > Import. Google Earth: File > Open.")
+        echo("  Google My Maps: Create a new map > Import. Google Earth: File > Open.")
     else:
-        click.echo("  QGIS / ArcGIS: add as a vector layer. Quick look: drag it onto geojson.io.")
+        echo("  QGIS / ArcGIS: add as a vector layer. Quick look: drag it onto geojson.io.")
     if include_content:
-        click.echo("  It includes evidence excerpts; importing into an online map uploads them. "
+        echo("  It includes evidence excerpts; importing into an online map uploads them. "
                    "--no-content leaves them out.")
 
 
@@ -242,7 +248,7 @@ def map_export(store: FileCaseStore, case_id: str, out_path: str, fmt: str, no_c
                                    + (f" ({withheld} location(s) near sensitive places left out)" if withheld else ""))
     _write_map(out_path, _map_format(out_path, fmt), data, [], not no_content)
     if withheld:
-        click.echo(f"  Left out {withheld} location(s) on or next to the principal's sensitive places.")
+        echo(f"  Left out {withheld} location(s) on or next to the principal's sensitive places.")
 
 
 @cli.command("cameras")
@@ -291,44 +297,44 @@ def cameras(store: FileCaseStore, case_id: str, online: bool, radius_m: float, l
         raise click.ClickException("no location leads to canvass yet (run enrich, or give a spot with --at)")
 
     if not online:
-        click.echo(f"Spots it would search ({len(targets)}):")
+        echo(f"Spots it would search ({len(targets)}):")
         for t in targets:
-            click.echo(f"  {t.label}: {t.latitude:.5f}, {t.longitude:.5f}, within {t.radius_m:.0f} m")
-        click.echo("Re-run with --online to look them up. Only these circles are sent, to the Overpass API.")
+            echo(f"  {printable(t.label)}: {t.latitude:.5f}, {t.longitude:.5f}, within {t.radius_m:.0f} m")
+        echo("Re-run with --online to look them up. Only these circles are sent, to the Overpass API.")
         return
 
-    click.echo(f"Looking up mapped cameras around {len(targets)} spot(s)...")
+    echo(f"Looking up mapped cameras around {len(targets)} spot(s)...")
     found = cams.fetch_cameras(targets, endpoint or cams.OVERPASS_URL)
     canvass = cams.canvass(targets, found)
     for t in canvass:
-        click.echo("\n" + style.heading(t.label) + style.dim(f"  {t.latitude:.5f}, {t.longitude:.5f}"))
-        click.echo(style.dim(f"  {google_maps_url(t.latitude, t.longitude)}"))
+        echo("\n" + style.heading(t.label) + style.dim(f"  {t.latitude:.5f}, {t.longitude:.5f}"))
+        echo(style.dim(f"  {google_maps_url(t.latitude, t.longitude)}"))
         if t.latest:
-            click.echo(f"  latest dated evidence here: {t.latest}")
+            echo(f"  latest dated evidence here: {printable(t.latest)}")
         if not t.hits:
-            click.echo(style.dim(f"  no mapped cameras within {t.radius_m:.0f} m. Walk it: OSM coverage has gaps."))
+            echo(style.dim(f"  no mapped cameras within {t.radius_m:.0f} m. Walk it: OSM coverage has gaps."))
             continue
         for hit in t.hits:
             cam = hit.camera
             facing = {True: style.accent("points at the spot"), False: style.dim("points away"),
                       None: ""}[hit.facing]
-            who = f" · {cam.operator}" if cam.operator else ""
-            where = f" · {cam.zone}" if cam.zone else ""
-            click.echo(f"  {hit.distance_m:>5.0f} m  {style.strong(cam.kind)}{who}{where}  {facing}".rstrip())
-            click.echo(style.dim(f"           {street_view_url(cam.latitude, cam.longitude)}"))
+            who = f" · {printable(cam.operator)}" if cam.operator else ""  # from OpenStreetMap: anyone can edit it
+            where = f" · {printable(cam.zone)}" if cam.zone else ""
+            echo(f"  {hit.distance_m:>5.0f} m  {style.strong(cam.kind)}{who}{where}  {facing}".rstrip())
+            echo(style.dim(f"           {street_view_url(cam.latitude, cam.longitude)}"))
     total = len({(h.camera.osm_type, h.camera.osm_id) for t in canvass for h in t.hits})
-    click.echo(f"\n{total} mapped camera(s). {cams.RETENTION_NOTE}")
+    echo(f"\n{total} mapped camera(s). {cams.RETENTION_NOTE}")
     if any(h.camera.kind == "ALPR" for t in canvass for h in t.hits):
-        click.echo("Plate readers nearby: their operator (often a police department) can search reads for a "
+        echo("Plate readers nearby: their operator (often a police department) can search reads for a "
                    "plate in this case. Ask through the investigating agency.")
-    click.echo(style.dim("Map data © OpenStreetMap contributors (ODbL)."))
+    echo(style.dim("Map data © OpenStreetMap contributors (ODbL)."))
 
     if out_path:
         result = cams.canvass_dicts(canvass)
         if out_path.lower().endswith(".csv") and not fmt:
             with open(out_path, "w", encoding="utf-8", newline="") as handle:  # write_text has no newline= on 3.9
                 handle.write(render_canvass_csv(result))
-            click.echo(f"Wrote canvass checklist to {out_path}")
+            echo(f"Wrote canvass checklist to {out_path}")
         else:
             _write_map(out_path, _map_format(out_path, fmt), data, result, not no_content)
 
@@ -360,8 +366,8 @@ def ingest_csv(store: FileCaseStore, case_id: str, csv_file: str, text_cols: tup
     _report_csv(result, case_id, dry_run)
     if dry_run:
         for item in result.evidence[:3]:
-            click.echo(f"  {item.identifier}: {item.content}")
-        click.echo("Nothing written. Re-run without --dry-run to import.")
+            echo(f"  {printable(item.identifier)}: {printable(item.content)}")
+        echo("Nothing written. Re-run without --dry-run to import.")
 
 
 @cli.command("ingest-email")
@@ -394,11 +400,11 @@ def ingest_chat(store: FileCaseStore, case_id: str, path: str, fmt: str, dayfirs
     Other chat tools usually export CSV; use `ingest-csv` for those.
     """
     result = pipeline.ingest_chat(store, case_id, path, fmt, dayfirst, source)
-    click.echo(f"Imported {len(result.evidence)} {result.format} message(s) into case {case_id!r}")
+    echo(f"Imported {len(result.evidence)} {result.format} message(s) into case {case_id!r}")
     if result.skipped:
-        click.echo(f"  {result.skipped} system or media-only message(s) skipped")
+        echo(f"  {result.skipped} system or media-only message(s) skipped")
     if result.unparsed_times:
-        click.echo(f"  {result.unparsed_times} time(s) not understood (kept in the text; try --dayfirst?)")
+        echo(f"  {result.unparsed_times} time(s) not understood (kept in the text; try --dayfirst?)")
 
 
 @cli.command("ingest-image")
@@ -409,9 +415,9 @@ def ingest_image(store: FileCaseStore, case_id: str, image_file: str) -> None:
     """Extract EXIF metadata (GPS, device, timestamp) from an image and add it to a case."""
     evidence, leads = pipeline.ingest_image(store, case_id, image_file)
     if evidence is not None:
-        click.echo(f"Extracted {len(leads)} EXIF item(s) from {Path(image_file).name}")
+        echo(f"Extracted {len(leads)} EXIF item(s) from {Path(image_file).name}")
     else:
-        click.echo("No EXIF metadata found in image.")
+        echo("No EXIF metadata found in image.")
 
 
 @cli.command("username")
@@ -423,11 +429,11 @@ def lookup_username(store: FileCaseStore, case_id: str, username: str) -> None:
     from ark_angel.ingest.username_source import SITES, UsernameIngestionSource
 
     store.get_case(case_id)
-    click.echo(f"Searching {len(SITES)} platforms for {username!r}...")
+    echo(f"Searching {len(SITES)} platforms for {username!r}...")
     leads = pipeline.ingest_username_hits(store, case_id, UsernameIngestionSource().check(username))
-    click.echo(f"Found {len(leads)} match(es) (unverified, confirm by hand)")
+    echo(f"Found {len(leads)} match(es) (unverified, confirm by hand)")
     for lead in leads:
-        click.echo(f"  {lead.summary}")
+        echo(f"  {printable(lead.summary)}")
 
 
 @cli.command("pivot")
@@ -440,19 +446,24 @@ def pivot(store: FileCaseStore, case_id: str, online: bool) -> None:
 
     handles = pipeline.handles_in_case(store, case_id)
     if not handles:
-        click.echo("No handles found in this case's evidence.")
+        echo("No handles found in this case's evidence.")
         return
     if not online:
-        click.echo(f"Handles found in evidence ({len(handles)}):")
+        echo(f"Handles found in evidence ({len(handles)}):")
         for handle in handles:
-            click.echo(f"  @{handle}")
-        click.echo("Re-run with --online to check them against public platforms.")
+            echo(f"  @{handle}")
+        echo("Re-run with --online to check them against public platforms.")
         return
     source = UsernameIngestionSource()
     for handle in handles:
-        leads = pipeline.ingest_username_hits(store, case_id, source.check(handle))
-        click.echo(f"@{handle}: {len(leads)} platform match(es)")
-    click.echo(f"Run `ark-angel enrich {case_id}` to correlate the new hits.")
+        try:
+            hits = source.check(handle)
+        except ValueError:
+            echo(f"@{printable(handle)}: skipped, not a plain username")
+            continue
+        leads = pipeline.ingest_username_hits(store, case_id, hits)
+        echo(f"@{handle}: {len(leads)} platform match(es)")
+    echo(f"Run `ark-angel enrich {case_id}` to correlate the new hits.")
 
 
 @cli.group("place", help="Manage a case's gazetteer of named places.")
@@ -494,8 +505,8 @@ def place_add(store: FileCaseStore, case_id: str, name: str, latitude: float, lo
     else:
         place = Place(name, latitude, longitude, list(aliases), radius_m or 250.0)
     place, = pipeline.add_places(store, case_id, [place])
-    click.echo(f"Added {_describe(place)}")
-    click.echo(f"Run `ark-angel enrich {case_id}` to re-correlate.")
+    echo(f"Added {_describe(place)}")
+    echo(f"Run `ark-angel enrich {case_id}` to re-correlate.")
 
 
 @place_group.command("list")
@@ -505,9 +516,9 @@ def place_list(store: FileCaseStore, case_id: str) -> None:
     """List a case's named places."""
     places = store.get_case(case_id).places
     if not places:
-        click.echo("No places yet. Try `ark-angel place suggest` to see which names the evidence uses.")
+        echo("No places yet. Try `ark-angel place suggest` to see which names the evidence uses.")
     for place in places:
-        click.echo(_describe(place))
+        echo(_describe(place))
 
 
 @place_group.command("remove")
@@ -518,7 +529,7 @@ def place_remove(store: FileCaseStore, case_id: str, name: str) -> None:
     """Remove a named place."""
     if not pipeline.remove_place(store, case_id, name):
         raise click.ClickException(f"no place named {name!r} in case {case_id!r}")
-    click.echo(f"Removed {name!r}")
+    echo(f"Removed {name!r}")
 
 
 @place_group.command("import")
@@ -528,7 +539,7 @@ def place_remove(store: FileCaseStore, case_id: str, name: str) -> None:
 def place_import(store: FileCaseStore, case_id: str, csv_file: str) -> None:
     """Import places from a CSV: name,latitude,longitude[,aliases][,radius_m] (aliases split by ';')."""
     places = pipeline.add_places(store, case_id, pipeline.read_places_csv(csv_file))
-    click.echo(f"Imported {len(places)} place(s) into case {case_id!r}")
+    echo(f"Imported {len(places)} place(s) into case {case_id!r}")
 
 
 @place_group.command("suggest")
@@ -541,12 +552,12 @@ def place_suggest(store: FileCaseStore, case_id: str) -> None:
     case = store.get_case(case_id)
     suggestions = suggest_places(case.evidence, case.known_places())
     if not suggestions:
-        click.echo("Every place-like name in the evidence is already in the gazetteer.")
+        echo("Every place-like name in the evidence is already in the gazetteer.")
         return
-    click.echo("Unresolved place names (most mentioned first):")
+    echo("Unresolved place names (most mentioned first):")
     for suggestion in suggestions:
-        click.echo(f"  {suggestion.name}  ({len(suggestion.evidence_ids)}x: {', '.join(suggestion.evidence_ids[:4])})")
-    click.echo(f"Resolve with `ark-angel place add {case_id} NAME LAT LON` or "
+        echo(f"  {printable(suggestion.name)}  ({len(suggestion.evidence_ids)}x: {', '.join(suggestion.evidence_ids[:4])})")
+    echo(f"Resolve with `ark-angel place add {case_id} NAME LAT LON` or "
                f"`ark-angel place lookup {case_id} NAME --online`.")
 
 
@@ -562,9 +573,9 @@ def place_find(name: str, states: tuple) -> None:
         raise click.ClickException(f"no state, county or city called {name!r}"
                                    + (f" in {', '.join(states)}" if states else ""))
     for entry in entries[:20]:
-        click.echo(f"  {entry.label}  {entry.latitude:.4f}, {entry.longitude:.4f}")
+        echo(f"  {entry.label}  {entry.latitude:.4f}, {entry.longitude:.4f}")
     if len(entries) > 20:
-        click.echo(f"  … and {len(entries) - 20} more; narrow it with --state")
+        echo(f"  … and {len(entries) - 20} more; narrow it with --state")
 
 
 @place_group.command("resolve")
@@ -581,21 +592,21 @@ def place_resolve(store: FileCaseStore, case_id: str, states: tuple, apply_: boo
     """
     resolutions = pipeline.resolve_unmatched_places(store, case_id, states)
     if not resolutions:
-        click.echo("No unmatched place names in the evidence.")
+        echo("No unmatched place names in the evidence.")
         return
     for r in resolutions:
         if r.status == "resolved":
-            click.echo(f"  {r.name} -> {r.entry.label}  [{r.why}]")
+            echo(f"  {printable(r.name)} -> {r.entry.label}  [{r.why}]")
         else:
-            click.echo(f"  {r.name}: {r.status}, {r.why}")
+            echo(f"  {printable(r.name)}: {r.status}, {r.why}")
             for entry in r.candidates[:3]:
-                click.echo(click.style(f"      {entry.label}", dim=True))
+                echo(click.style(f"      {entry.label}", dim=True))
     resolved = [r for r in resolutions if r.status == "resolved"]
     if not apply_:
-        click.echo(f"{len(resolved)} of {len(resolutions)} resolved. Nothing saved; re-run with --apply to add them.")
+        echo(f"{len(resolved)} of {len(resolutions)} resolved. Nothing saved; re-run with --apply to add them.")
         return
     pipeline.add_places(store, case_id, [r.entry.to_place(r.name) for r in resolved])
-    click.echo(f"Added {len(resolved)} place(s). Run `ark-angel enrich {case_id}` to re-correlate.")
+    echo(f"Added {len(resolved)} place(s). Run `ark-angel enrich {case_id}` to re-correlate.")
 
 
 @place_group.command("lookup")
@@ -622,8 +633,8 @@ def place_lookup(store: FileCaseStore, case_id: str, query: str, online: bool, p
         raise click.ClickException(f"no results for {query!r}")
     if pick is None:
         for number, (place, display) in enumerate(candidates, start=1):
-            click.echo(f"  {number}. {place.latitude:.5f}, {place.longitude:.5f} (±{place.radius_m:g} m)  {display}")
-        click.echo("Re-run with --pick N to save one.")
+            echo(f"  {number}. {place.latitude:.5f}, {place.longitude:.5f} (±{place.radius_m:g} m)  {display}")
+        echo("Re-run with --pick N to save one.")
         return
     if not 1 <= pick <= len(candidates):
         raise click.ClickException(f"--pick must be between 1 and {len(candidates)}")
@@ -631,8 +642,8 @@ def place_lookup(store: FileCaseStore, case_id: str, query: str, online: bool, p
     place.name = name or query
     place.aliases = list(aliases)
     pipeline.add_places(store, case_id, [place])
-    click.echo(f"Added {_describe(place)}")
-    click.echo(f"Run `ark-angel enrich {case_id}` to re-correlate.")
+    echo(f"Added {_describe(place)}")
+    echo(f"Run `ark-angel enrich {case_id}` to re-correlate.")
 
 
 @cli.group("lead", help="Review leads: verify, dismiss, reopen.")
@@ -664,11 +675,11 @@ def lead_list(store: FileCaseStore, case_id: str, status: str) -> None:
         shown += 1
         score = lead_score(item.lead)
         flag = "RESURFACED" if item.state.resurfaced else _STATUS_MARKS[state]
-        click.echo(f"{style.accent(f'#{item.rank:<4}')}{score:5.1f}  {style.bar(score, top)}  "
-                   f"{style.accent(f'{flag:<10}')} {style.strong(item.lead.summary)}")
-        click.echo(style.dim(f"{'':>34}{item.lead.identifier}"))
+        echo(f"{style.accent(f'#{item.rank:<4}')}{score:5.1f}  {style.bar(score, top)}  "
+                   f"{style.accent(f'{flag:<10}')} {style.strong(printable(item.lead.summary))}")
+        echo(style.dim(f"{'':>34}{item.lead.identifier}"))
     if not shown:
-        click.echo("No leads match. Run `ark-angel enrich` first?" if status is None else f"No {status} leads.")
+        echo("No leads match. Run `ark-angel enrich` first?" if status is None else f"No {status} leads.")
 
 
 @lead_group.command("show")
@@ -682,29 +693,29 @@ def lead_show(store: FileCaseStore, case_id: str, lead_ref: str) -> None:
     case = store.get_case(case_id)
     item = resolve_lead(case, lead_ref)
     lead = item.lead
-    click.echo(f"#{item.rank} {lead.summary}")
-    click.echo(f"  id: {lead.identifier}")
-    click.echo(f"  score: {lead_score(lead):.1f}   status: {item.state.status}"
+    echo(f"#{item.rank} {printable(lead.summary)}")
+    echo(f"  id: {lead.identifier}")
+    echo(f"  score: {lead_score(lead):.1f}   status: {item.state.status}"
                f"{' (resurfaced)' if item.state.resurfaced else ''}")
     if item.state.new_evidence_ids:
-        click.echo(f"  new since last review: {', '.join(item.state.new_evidence_ids)}")
+        echo(f"  new since last review: {', '.join(item.state.new_evidence_ids)}")
     for reason in lead.reasons:
-        click.echo(f"  - {reason}")
+        echo(f"  - {printable(reason)}")
     history = [r for r in case.reviews if r.lead_id == lead.identifier]
     if item.state.review is not None and item.state.review.lead_id != lead.identifier:
         history = [r for r in case.reviews if r.lead_id == item.state.review.lead_id]
-        click.echo(f"  (review history carried over from {item.state.review.lead_id}, which shares its evidence)")
-    click.echo("Review history:" if history else "Never reviewed.")
+        echo(f"  (review history carried over from {item.state.review.lead_id}, which shares its evidence)")
+    echo("Review history:" if history else "Never reviewed.")
     for review in history:
         note = f": {review.note}" if review.note else ""
-        click.echo(f"  {review.reviewed_at}  {review.status:<9} by {review.reviewer}{note}")
+        echo(f"  {review.reviewed_at}  {review.status:<9} by {printable(review.reviewer)}{printable(note)}")
 
 
 def _review(store: FileCaseStore, case_id: str, lead_ref: str, status: str, note: str, reviewer: str) -> None:
     item, review = pipeline.review_lead(store, case_id, lead_ref, status, note or "", reviewer or "")
-    click.echo(f"Marked #{item.rank} {status}: {item.lead.summary}")
+    echo(f"Marked #{item.rank} {status}: {printable(item.lead.summary)}")
     if review.note:
-        click.echo(f"  note: {review.note}")
+        echo(f"  note: {printable(review.note)}")
 
 
 _note_option = click.option("--note", help="Why. Required when dismissing.")
@@ -781,16 +792,16 @@ def browse(store: FileCaseStore, case_id: str, port: int, new_token: bool, no_en
     from ark_angel.style import terminal_style
 
     style = terminal_style()
-    recorder = Recorder(store, case_id, log=click.echo)
+    recorder = Recorder(store, case_id, log=echo)
     token = load_token(store.data_dir.parent / "recorder_token", rotate=new_token)
     try:
         server = RecorderServer(recorder, token, port)
     except OSError as exc:
         raise click.ClickException(f"can't listen on 127.0.0.1:{port} ({exc.strerror}); try --port")
-    click.echo(style.heading(f"Recording into case {case_id}") + style.dim(f"  {recorder.title}"))
-    click.echo(f"  address  {style.accent(f'http://127.0.0.1:{server.port}')}")
-    click.echo(f"  token    {style.accent(token)}")
-    click.echo(style.dim("  Paste both into the ArkAngel Recorder extension and press Record. Ctrl+C stops.\n"))
+    echo(style.heading(f"Recording into case {case_id}") + style.dim(f"  {printable(recorder.title)}"))
+    echo(f"  address  {style.accent(f'http://127.0.0.1:{server.port}')}")
+    echo(f"  token    {style.accent(token)}")
+    echo(style.dim("  Paste both into the ArkAngel Recorder extension and press Record. Ctrl+C stops.\n"))
     import signal
 
     def _stop(*_):  # closing the terminal or `kill` stops it as cleanly as Ctrl+C
@@ -806,11 +817,11 @@ def browse(store: FileCaseStore, case_id: str, port: int, new_token: bool, no_en
         pass
     finally:
         server.server_close()
-    click.echo(f"\nRecorded {recorder.captured} capture(s), {recorder.matched} matching the case.")
+    echo(f"\nRecorded {recorder.captured} capture(s), {recorder.matched} matching the case.")
     if recorder.captured and not no_enrich:
         leads, _ = pipeline.enrich(store, case_id)
-        click.echo(f"Re-ran enrich: {len(leads)} lead(s).")
-    click.echo(f"See what you did: ark-angel trail {case_id}")
+        echo(f"Re-ran enrich: {len(leads)} lead(s).")
+    echo(f"See what you did: ark-angel trail {case_id}")
 
 
 @cli.command("ingest-history")
@@ -836,16 +847,16 @@ def ingest_history(store: FileCaseStore, case_id: str, history_file: str, since:
     searches = sum(1 for e in result.evidence if e.metadata["kind"] == "search")
     profiles = sum(1 for e in result.evidence if e.metadata.get("profile"))
     verb = "Would import" if dry_run else "Imported"
-    click.echo(f"{verb} {len(result.evidence)} visit(s) from {result.format} history into case {case_id!r}: "
+    echo(f"{verb} {len(result.evidence)} visit(s) from {result.format} history into case {case_id!r}: "
                f"{searches} search(es), {profiles} profile page(s)"
                + (f"; {result.skipped} non-web page(s) skipped" if result.skipped else ""))
     if dry_run:
         for item in result.evidence[:15]:
-            click.echo(f"  {item.content}")
+            echo(f"  {printable(item.content)}")
         if len(result.evidence) > 15:
-            click.echo(f"  … {len(result.evidence) - 15} more")
+            echo(f"  … {len(result.evidence) - 15} more")
     else:
-        click.echo(f"See the trail: ark-angel trail {case_id}")
+        echo(f"See the trail: ark-angel trail {case_id}")
 
 
 @cli.command("trail")
@@ -868,9 +879,9 @@ def trail(store: FileCaseStore, case_id: str, fmt: str, out_path: str, session: 
     }[fmt]()
     if out_path:
         Path(out_path).write_text(output, encoding="utf-8")
-        click.echo(f"Wrote {fmt} trail to {out_path}")
+        echo(f"Wrote {fmt} trail to {out_path}")
     else:
-        click.echo(output)
+        echo(output)
 
 
 # Principal defender
@@ -919,8 +930,8 @@ def defend_init(store: FileCaseStore, case_id: str, name: str, authorized_by: st
     """Open a defender case protecting NAME."""
     case = pipeline.create_defender_case(store, case_id, name, authorized_by, title, aliases,
                                          _identifiers(phones, emails, handles, plates))
-    click.echo(f"Created defender case {case_id!r}: {case.title}")
-    click.echo(f"Next: `ark-angel defend place {case_id} Home LAT LON --alias \"<street address>\"`, "
+    echo(f"Created defender case {case_id!r}: {case.title}")
+    echo(f"Next: `ark-angel defend place {case_id} Home LAT LON --alias \"<street address>\"`, "
                f"then ingest what's out there and run `ark-angel defend brief {case_id}`.")
 
 
@@ -935,7 +946,7 @@ def defend_add(store: FileCaseStore, case_id: str, aliases: tuple, phones: tuple
     if not aliases and not found:
         raise click.ClickException("nothing to add: pass --alias, --phone, --email, --handle or --plate")
     pipeline.add_principal_identifiers(store, case_id, aliases, found)
-    click.echo(f"Updated the principal's profile. Run `ark-angel enrich {case_id}` to re-check.")
+    echo(f"Updated the principal's profile. Run `ark-angel enrich {case_id}` to re-check.")
 
 
 @defend_group.command("place", context_settings={"ignore_unknown_options": True})
@@ -960,12 +971,12 @@ def defend_place(store: FileCaseStore, case_id: str, name: str, latitude: float,
     """
     if remove:
         removed = pipeline.remove_sensitive_place(store, case_id, name)
-        click.echo(f"Removed {name!r}" if removed else f"No sensitive place named {name!r}")
+        echo(f"Removed {name!r}" if removed else f"No sensitive place named {name!r}")
         return
     place = pipeline.add_sensitive_place(store, case_id, Place(name, latitude, longitude, list(aliases), radius_m,
                                                                source="sensitive"))
-    click.echo(f"Added sensitive place {_describe(place)}")
-    click.echo(f"Run `ark-angel enrich {case_id}` to re-check.")
+    echo(f"Added sensitive place {_describe(place)}")
+    echo(f"Run `ark-angel enrich {case_id}` to re-check.")
 
 
 @defend_group.command("show")
@@ -975,15 +986,15 @@ def defend_show(store: FileCaseStore, case_id: str) -> None:
     """Show the principal's profile: names, identifiers, sensitive places."""
     case = pipeline.defender_case(store, case_id)
     p = case.principal
-    click.echo(f"{case.identifier}: {case.title}")
-    click.echo(f"  principal: {p.name}" + (f" (also {', '.join(p.aliases)})" if p.aliases else ""))
-    click.echo(f"  authorized by: {p.authorized_by}" + (f" on {p.created_at[:10]}" if p.created_at else ""))
+    echo(f"{case.identifier}: {case.title}")
+    echo(f"  principal: {p.name}" + (f" (also {', '.join(p.aliases)})" if p.aliases else ""))
+    echo(f"  authorized by: {p.authorized_by}" + (f" on {p.created_at[:10]}" if p.created_at else ""))
     for label, values in (("phones", p.phones), ("emails", p.emails), ("handles", p.handles), ("plates", p.plates)):
         if values:
-            click.echo(f"  {label}: {', '.join(values)}")
-    click.echo("  sensitive places:" if p.places else "  sensitive places: none yet (`ark-angel defend place`)")
+            echo(f"  {label}: {', '.join(values)}")
+    echo("  sensitive places:" if p.places else "  sensitive places: none yet (`ark-angel defend place`)")
     for place in p.places:
-        click.echo(f"    {_describe(place)}")
+        echo(f"    {_describe(place)}")
 
 
 @defend_group.command("brief")
@@ -1012,9 +1023,9 @@ def defend_brief(store: FileCaseStore, case_id: str, fmt: str, out_path: str, sh
     }[fmt]()
     if out_path:
         Path(out_path).write_text(output, encoding="utf-8")
-        click.echo(f"Wrote {fmt} briefing to {out_path}")
+        echo(f"Wrote {fmt} briefing to {out_path}")
     else:
-        click.echo(output)
+        echo(output)
 
 
 @defend_group.command("demo")
@@ -1027,16 +1038,16 @@ def defend_demo(store: FileCaseStore, case_id: str) -> None:
     from ark_angel.style import terminal_style
 
     style = terminal_style()
-    click.echo(style.heading("ArkAngel principal defender demo")
+    echo(style.heading("ArkAngel principal defender demo")
                + style.dim(f"  {style.dot} everything below is synthetic"))
-    click.echo(style.dim(style.rule * 60))
+    echo(style.dim(style.rule * 60))
     case = build_defend_demo(store, store.data_dir.parent / "defend_demo_inputs", case_id,
-                             log=lambda line: click.echo(style.dim(line)))
-    click.echo("")
-    click.echo(render_brief_text(build_brief(case), style, reasons=False))
-    click.echo("")
-    click.echo(style.dim(DEFEND_DEMO_NOTICE))
-    click.echo(style.dim(f"Explore further: ark-angel defend brief {case_id}   |   ark-angel lead list {case_id}"))
+                             log=lambda line: echo(style.dim(line)))
+    echo("")
+    echo(render_brief_text(build_brief(case), style, reasons=False))
+    echo("")
+    echo(style.dim(DEFEND_DEMO_NOTICE))
+    echo(style.dim(f"Explore further: ark-angel defend brief {case_id}   |   ark-angel lead list {case_id}"))
 
 
 @cli.group("web", help="The ArkAngel website: public profiles and tips, member workspaces, admin console.")
@@ -1081,7 +1092,7 @@ def web_create_admin(obj, username: str, email: str) -> None:
     """Create an approved admin account (asks for the password twice; 12+ characters)."""
     db = obj.db
     db.create_user(username, _new_password(), role="admin", status="active", email=email)
-    click.echo(f"Created admin {username.strip().lower()!r}. Start the site with `ark-angel web serve`.")
+    echo(f"Created admin {username.strip().lower()!r}. Start the site with `ark-angel web serve`.")
 
 
 @web_group.command("users")
@@ -1092,10 +1103,11 @@ def web_users(obj, pending: bool) -> None:
     db = obj.db
     rows = db.users("pending" if pending else None)
     if not rows:
-        click.echo("No pending accounts." if pending else "No accounts yet. Create one with `ark-angel web create-admin`.")
+        echo("No pending accounts." if pending else "No accounts yet. Create one with `ark-angel web create-admin`.")
     for row in rows:
-        note = f"  {row['signup_note']}" if row["status"] == "pending" and row["signup_note"] else ""
-        click.echo(f"{row['username']:<24} {row['role']:<7} {row['status']:<9}{note}")
+        # Sign-up notes are typed by anonymous visitors: no escape sequences into an admin's terminal.
+        note = f"  {printable(row['signup_note'])}" if row["status"] == "pending" and row["signup_note"] else ""
+        echo(f"{row['username']:<24} {row['role']:<7} {row['status']:<9}{note}")
 
 
 @web_group.command("approve")
@@ -1105,7 +1117,7 @@ def web_approve(obj, username: str) -> None:
     """Approve a pending account (or re-enable a disabled one)."""
     db = obj.db
     db.set_status(username, "active")
-    click.echo(f"Approved {username.strip().lower()!r}")
+    echo(f"Approved {username.strip().lower()!r}")
 
 
 @web_group.command("disable")
@@ -1115,7 +1127,7 @@ def web_disable(obj, username: str) -> None:
     """Disable an account and sign it out everywhere."""
     db = obj.db
     db.set_status(username, "disabled")
-    click.echo(f"Disabled {username.strip().lower()!r}")
+    echo(f"Disabled {username.strip().lower()!r}")
 
 
 @web_group.command("passwd")
@@ -1125,7 +1137,7 @@ def web_passwd(obj, username: str) -> None:
     """Set a password. Every session that user has is signed out."""
     db = obj.db
     db.set_password(username, _new_password("New password"))
-    click.echo(f"Password changed for {username.strip().lower()!r}; all of its sessions were signed out.")
+    echo(f"Password changed for {username.strip().lower()!r}; all of its sessions were signed out.")
 
 
 @web_group.command("delete-user")
@@ -1137,7 +1149,7 @@ def web_delete_user(obj, username: str) -> None:
     db = obj.db
     if not db.delete_user(username):
         raise click.ClickException(f"no user {username.strip().lower()!r}")
-    click.echo(f"Deleted {username.strip().lower()!r}")
+    echo(f"Deleted {username.strip().lower()!r}")
 
 
 @web_group.command("reset-2fa")
@@ -1152,7 +1164,7 @@ def web_reset_2fa(obj, username: str) -> None:
     and, if the site requires it, set two-factor up again straight away.
     """
     obj.db.reset_totp(username)
-    click.echo(f"Two-factor sign-in is off for {username.strip().lower()!r}, and it's signed out everywhere.")
+    echo(f"Two-factor sign-in is off for {username.strip().lower()!r}, and it's signed out everywhere.")
 
 
 @web_group.command("import-case")
@@ -1164,7 +1176,7 @@ def web_import_case(obj, case_id: str, owner: str) -> None:
     store, db = obj.store, obj.db
     case = store.get_case(case_id)
     db.register_case(case.identifier, owner)
-    click.echo(f"Case {case.identifier!r} is now on the site, owned by {owner.strip().lower()!r}.")
+    echo(f"Case {case.identifier!r} is now on the site, owned by {owner.strip().lower()!r}.")
 
 
 @web_group.command("test-email")
@@ -1186,7 +1198,7 @@ def web_test_email(address: str) -> None:
                                        "If you're reading this, ArkAngel can send email.\n")])
     except Exception as exc:  # smtplib, TLS and network errors all mean "check the settings"
         raise click.ClickException(f"sending failed via {config.host}:{config.port} ({config.security}): {exc}")
-    click.echo(f"Sent a test email to {to} via {config.host}:{config.port} ({config.security}).")
+    echo(f"Sent a test email to {to} via {config.host}:{config.port} ({config.security}).")
 
 
 @web_group.command("backup")
@@ -1200,9 +1212,9 @@ def web_backup(obj, dest: str, recipient: str) -> None:
     path = backup.snapshot(obj.store.data_dir, obj.db_path, Path(dest))
     if recipient:
         path = backup.encrypt(path, recipient)
-        click.echo(f"Backed up and encrypted to {path}. Only the matching private key can open it.")
+        echo(f"Backed up and encrypted to {path}. Only the matching private key can open it.")
     else:
-        click.echo(f"Backed up to {path}. It holds tips and contact details: store it encrypted.")
+        echo(f"Backed up to {path}. It holds tips and contact details: store it encrypted.")
 
 
 @web_group.command("backup-nightly")
@@ -1229,7 +1241,7 @@ def web_backup_nightly(obj, once: bool) -> None:
         try:
             alert_now(smtp, backup.admin_emails(obj.db_path, smtp.admin_emails), f"[ArkAngel] {subject}", body)
         except Exception as mail_exc:  # the alert failing mustn't hide the backup problem
-            click.echo(f"{stamp()} could not email the alert: {mail_exc.__class__.__name__}", err=True)
+            echo(f"{stamp()} could not email the alert: {mail_exc.__class__.__name__}", err=True)
 
     try:
         config = backup.BackupConfig.from_env(os.environ)
@@ -1238,7 +1250,7 @@ def web_backup_nightly(obj, once: bool) -> None:
             raise
         # Don't crash-loop the container (or block the site): say so loudly, every day, until it's fixed.
         while True:
-            click.echo(f"{stamp()} BACKUPS ARE NOT RUNNING: {exc}", err=True)
+            echo(f"{stamp()} BACKUPS ARE NOT RUNNING: {exc}", err=True)
             alert("Backups are not set up", f"Nightly backups aren't running: {exc}.\n\nUntil this is fixed, "
                   "tips and evidence on the site have no backup. See the Backups section of docs/deploy.md.\n")
             time.sleep(24 * 60 * 60)
@@ -1249,23 +1261,23 @@ def web_backup_nightly(obj, once: bool) -> None:
         except Exception as exc:  # anything at all: a silent crash-loop is the one failure we can't allow
             if not isinstance(exc, backup.BackupError):
                 exc = backup.BackupError(f"{exc.__class__.__name__}: {exc}")
-            click.echo(f"{stamp()} backup FAILED: {exc}", err=True)
+            echo(f"{stamp()} backup FAILED: {exc}", err=True)
             alert("Nightly backup FAILED", f"The backup at {stamp()} failed:\n\n    {exc}\n\nThe site itself is fine, "
                   "but new tips and evidence aren't backed up until this is fixed. Details: docker compose logs backup\n")
             return False
         where = f"copied to {config.dest}" if config.dest else "kept on this server only (no ARK_ANGEL_BACKUP_DEST)"
-        click.echo(f"{stamp()} backup ok: {out.name}, {where}")
+        echo(f"{stamp()} backup ok: {out.name}, {where}")
         backup.ping(config.ping_url)
         return True
 
     if not config.dest:
-        click.echo("Warning: no ARK_ANGEL_BACKUP_DEST, so backups stay on this server. If it dies, they die with it.",
+        echo("Warning: no ARK_ANGEL_BACKUP_DEST, so backups stay on this server. If it dies, they die with it.",
                    err=True)
     if once:
         if not run():
             raise SystemExit(1)
         return
-    click.echo(f"Nightly backups at {config.at} UTC" + (f" to {config.dest}" if config.dest else "") +
+    echo(f"Nightly backups at {config.at} UTC" + (f" to {config.dest}" if config.dest else "") +
                f", keeping {config.keep_days} days off-site and {config.local_keep} copies here.")
     while True:
         due = backup.next_run(datetime.now(timezone.utc), config.at)
@@ -1300,15 +1312,15 @@ def web_restore(obj, archive: str, force: bool) -> None:
             moved = backup.restore(Path(spool), obj.store.data_dir, obj.db_path, force=force)
         finally:
             Path(spool).unlink(missing_ok=True)
-        click.echo("Restored the backup from standard input." + (f" The previous data is in {moved}." if moved else ""))
-        click.echo("Start the site again to use it.")
+        echo("Restored the backup from standard input." + (f" The previous data is in {moved}." if moved else ""))
+        echo("Start the site again to use it.")
         return
     if archive.endswith(".age"):
         raise click.ClickException("decrypt it first on your own computer: age -d -i KEYFILE -o backup.tar.gz "
                                    f"{Path(archive).name}")
     moved = backup.restore(Path(archive), obj.store.data_dir, obj.db_path, force=force)
-    click.echo(f"Restored {Path(archive).name}." + (f" The previous data is in {moved}." if moved else ""))
-    click.echo("Start the site again to use it.")
+    echo(f"Restored {Path(archive).name}." + (f" The previous data is in {moved}." if moved else ""))
+    echo("Start the site again to use it.")
 
 
 @web_group.command("serve")
@@ -1346,10 +1358,10 @@ def web_serve(obj, host: str, port: int, allow_hosts: tuple, behind_proxy: bool,
         if not wait_for_admin:
             raise click.ClickException("create an admin first: ark-angel web create-admin NAME")
         # No first-run web setup page on purpose: whoever reached it first would own the site.
-        click.echo("No admin yet. Create one with: docker compose run --rm app ark-angel web create-admin NAME")
+        echo("No admin yet. Create one with: docker compose run --rm app ark-angel web create-admin NAME")
         while not db.has_admin():
             time.sleep(3)
-        click.echo("Admin found, starting.")
+        echo("Admin found, starting.")
     if host not in LOCAL_HOSTS and not behind_proxy:
         raise click.ClickException(
             f"listening on {host} would send passwords over plain HTTP to your network. Put the site behind an "
@@ -1362,13 +1374,13 @@ def web_serve(obj, host: str, port: int, allow_hosts: tuple, behind_proxy: bool,
     app = create_app(store, db, allowed_hosts=(*LOCAL_HOSTS, *allow_hosts), secure_cookies=behind_proxy,
                      site_name=site_name, mailer=mailer, require_2fa=require_2fa)
     shown = f"[{host}]" if ":" in host else host
-    click.echo(f"{site_name} website on http://{shown}:{port}/" + (" (behind your HTTPS proxy)" if behind_proxy else ""))
-    click.echo(f"Email notifications: on, via {mailer.config.host}:{mailer.config.port}" if mailer.enabled
+    echo(f"{site_name} website on http://{shown}:{port}/" + (" (behind your HTTPS proxy)" if behind_proxy else ""))
+    echo(f"Email notifications: on, via {mailer.config.host}:{mailer.config.port}" if mailer.enabled
                else "Email notifications: off (set ARK_ANGEL_SMTP_HOST to turn them on)")
-    click.echo({"admins": "Two-factor sign-in: required for admins",
+    echo({"admins": "Two-factor sign-in: required for admins",
                 "everyone": "Two-factor sign-in: required for everyone",
                 "off": "Two-factor sign-in: optional (--require-2fa off)"}[require_2fa])
-    click.echo("Ctrl+C to stop.")
+    echo("Ctrl+C to stop.")
     proxy = {"trusted_proxy": proxy_ip, "trusted_proxy_count": 1,
              "trusted_proxy_headers": {"x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"}} \
         if behind_proxy else {}
@@ -1390,32 +1402,32 @@ def demo(store: FileCaseStore, out_path: str, case_id: str) -> None:
     from ark_angel.style import terminal_style
 
     style = terminal_style()
-    click.echo(style.heading("ArkAngel demo") + style.dim(f"  {style.dot} everything below is synthetic"))
-    click.echo(style.dim(style.rule * 60))
+    echo(style.heading("ArkAngel demo") + style.dim(f"  {style.dot} everything below is synthetic"))
+    echo(style.dim(style.rule * 60))
     workdir = store.data_dir.parent / "demo_inputs"
-    case = build_demo_case(store, workdir, case_id, log=lambda line: click.echo(style.dim(line)))
+    case = build_demo_case(store, workdir, case_id, log=lambda line: echo(style.dim(line)))
     data = build_report(case)
 
-    click.echo("")
+    echo("")
     for line in case_header(data, style):
-        click.echo(line)
+        echo(line)
     top = top_score(data)
     verified = [lead for lead in data["leads"] if lead["status"] == "verified"]
     open_leads = [lead for lead in data["leads"] if lead["status"] == "open"]
     if verified:
-        click.echo("\n" + style.heading("Verified"))
+        echo("\n" + style.heading("Verified"))
         for lead in verified:
             for line in lead_lines(lead, top, style, reasons=1):
-                click.echo(line)
-    click.echo("\n" + style.heading("Top open leads"))
+                echo(line)
+    echo("\n" + style.heading("Top open leads"))
     for lead in open_leads[:5]:
         for line in lead_lines(lead, top, style, reasons=2):
-            click.echo(line)
+            echo(line)
 
     Path(out_path).write_text(render_html(data, notice=DEMO_NOTICE), encoding="utf-8")
-    click.echo("\n" + style.accent(f"Wrote HTML case file to {out_path}")
+    echo("\n" + style.accent(f"Wrote HTML case file to {out_path}")
                + style.dim(" (open it in a browser; prints cleanly)"))
-    click.echo(style.dim(f"Explore further: ark-angel lead list {case_id}   |   ark-angel report {case_id} --all"))
+    echo(style.dim(f"Explore further: ark-angel lead list {case_id}   |   ark-angel report {case_id} --all"))
 
 
 if __name__ == "__main__":
