@@ -10,6 +10,13 @@ Works in Chrome, Edge, Brave, Opera, Vivaldi and Firefox 121+.
 
 ## Install
 
+**Only install it from an official ArkAngel release.** An extension like this one can read every
+page you visit, so a look-alike is dangerous. Check the zip before you load it:
+
+```bash
+gh attestation verify ark-angel-recorder.zip --repo NullSecurityLLC/Ark_Angel
+```
+
 It isn't in the browser stores yet, so load it unpacked. Use the
 `ark-angel-recorder.zip` from a [release](https://github.com/NullSecurityLLC/Ark_Angel/releases)
 (unzip it), or this `extension/` folder from a clone.

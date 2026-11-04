@@ -75,6 +75,13 @@ If you act in good faith and follow this policy:
 - We will treat your research as authorized.
 - We will work with you to understand and resolve the issue.
 
+## Fake copies
+
+Official release files are signed with GitHub build attestations. To check one, run
+`gh attestation verify FILE --repo NullSecurityLLC/Ark_Angel` (see the README). Please report
+copies, websites or extensions that pass themselves off as ArkAngel through the same private
+advisory form. The name and logo policy is in [TRADEMARKS.md](TRADEMARKS.md).
+
 ## Untrusted input, by design
 
 Most of what ArkAngel handles was written by strangers: tips, emails, chat

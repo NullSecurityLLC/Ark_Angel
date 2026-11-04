@@ -1,9 +1,9 @@
 # Builds downloadable ArkAngel packages.
 #
 # - Pull requests that touch packaging: build everything and smoke-test it, no release.
-# - Push a tag like v0.2.0: build, smoke-test, then create a DRAFT GitHub release with
-#   the wheel, the source archive, standalone executables and SHA256SUMS. A maintainer
-#   reviews the draft and clicks Publish.
+# - Push a tag like v0.3.0: build, smoke-test, sign build provenance for every file, then create
+#   a DRAFT GitHub release with the wheel, the source archive, standalone executables, the browser
+#   extension and SHA256SUMS. A maintainer reviews the draft and clicks Publish.
 # - "Run workflow" (workflow_dispatch): build and keep the files as workflow artifacts.
 
 name: Release
@@ -126,6 +126,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Signing build provenance. Only this tag-only job gets these: pull-request builds never can sign.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -136,6 +139,22 @@ jobs:
           cd artifacts
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
+      # A signed record (Sigstore, logged publicly) that each file was built by this repository's release workflow
+      # from this tag's commit. A copy built anywhere else can't get one. Users check it with
+      # `gh attestation verify FILE --repo NullSecurityLLC/Ark_Angel` (README: "Is this the real ArkAngel?").
+      - name: Sign build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "artifacts/*"
+      - name: Check the signatures verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for file in artifacts/*; do
+            gh attestation verify "$file" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" > /dev/null
+            echo "verified: $file"
+          done
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
