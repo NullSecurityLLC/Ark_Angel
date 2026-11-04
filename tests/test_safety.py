@@ -49,7 +49,7 @@ def test_links_and_dotdot_cant_sneak_in(tmp_path: Path) -> None:
     assert protected_reason("/home/../usr/lib/x")
     link = tmp_path / "innocent"
     link.symlink_to("/etc")
-    with pytest.raises(UnsafeLocation, match="part of /etc"):
+    with pytest.raises(UnsafeLocation, match="part of (/private)?/etc"):  # macOS's /etc is /private/etc
         ensure_safe_target(link / "x.html")
 
 

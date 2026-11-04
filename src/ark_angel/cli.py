@@ -63,7 +63,8 @@ def cli(ctx: click.Context, data_dir: str, no_color: bool) -> None:
             stream.reconfigure(errors="replace")
         except (AttributeError, ValueError):
             pass
-    if running_elevated():
+    # Only for a person at a console: never mixed into piped or captured output (a JSON report, a script).
+    if running_elevated() and sys.stderr.isatty():
         click.echo("Note: ArkAngel is running as Administrator. It never needs that; a normal window is safer.",
                    err=True)
     ctx.obj = FileCaseStore(data_dir)
