@@ -3,15 +3,24 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 import click
 
 from ark_angel import __version__, pipeline
 from ark_angel.cases.store import CaseNotFoundError, FileCaseStore
 from ark_angel.models import Case, Place
+from ark_angel.safety import ensure_safe_target, running_elevated
 from ark_angel.textsafe import printable, terminal_safe
 
 DEFAULT_DATA_DIR = ".ark_angel/cases"
+
+
+def write_out(path: str, text: str, newline: Optional[str] = None) -> None:
+    """Write an output file the user named with --out, never into an operating-system folder."""
+    ensure_safe_target(path, "write a file")
+    with open(path, "w", encoding="utf-8", newline=newline) as handle:
+        handle.write(text)
 
 
 def echo(message="", **kwargs) -> None:
@@ -54,6 +63,9 @@ def cli(ctx: click.Context, data_dir: str, no_color: bool) -> None:
             stream.reconfigure(errors="replace")
         except (AttributeError, ValueError):
             pass
+    if running_elevated():
+        click.echo("Note: ArkAngel is running as Administrator. It never needs that; a normal window is safer.",
+                   err=True)
     ctx.obj = FileCaseStore(data_dir)
 
 
@@ -193,7 +205,7 @@ def report(store: FileCaseStore, case_id: str, fmt: str, out_path: str, top: int
     }
     output = renderers[fmt]()
     if out_path:
-        Path(out_path).write_text(output, encoding="utf-8")
+        write_out(out_path, output)
         echo(f"Wrote {fmt} report to {out_path}")
     else:
         echo(output)
@@ -213,7 +225,7 @@ def _write_map(path: str, fmt: str, data: dict, canvass: list, include_content: 
     from ark_angel.report.gis import render_geojson, render_kml
 
     render = render_kml if fmt == "kml" else render_geojson
-    Path(path).write_text(render(data, canvass, include_content=include_content), encoding="utf-8")
+    write_out(path, render(data, canvass, include_content=include_content))
     echo(f"Wrote {fmt.upper()} map to {path}")
     if fmt == "kml":
         echo("  Google My Maps: Create a new map > Import. Google Earth: File > Open.")
@@ -332,8 +344,7 @@ def cameras(store: FileCaseStore, case_id: str, online: bool, radius_m: float, l
     if out_path:
         result = cams.canvass_dicts(canvass)
         if out_path.lower().endswith(".csv") and not fmt:
-            with open(out_path, "w", encoding="utf-8", newline="") as handle:  # write_text has no newline= on 3.9
-                handle.write(render_canvass_csv(result))
+            write_out(out_path, render_canvass_csv(result), newline="")
             echo(f"Wrote canvass checklist to {out_path}")
         else:
             _write_map(out_path, _map_format(out_path, fmt), data, result, not no_content)
@@ -878,7 +889,7 @@ def trail(store: FileCaseStore, case_id: str, fmt: str, out_path: str, session: 
         "json": lambda: render_trail_json(data, case_id),
     }[fmt]()
     if out_path:
-        Path(out_path).write_text(output, encoding="utf-8")
+        write_out(out_path, output)
         echo(f"Wrote {fmt} trail to {out_path}")
     else:
         echo(output)
@@ -1022,7 +1033,7 @@ def defend_brief(store: FileCaseStore, case_id: str, fmt: str, out_path: str, sh
         "json": lambda: render_brief_json(data),
     }[fmt]()
     if out_path:
-        Path(out_path).write_text(output, encoding="utf-8")
+        write_out(out_path, output)
         echo(f"Wrote {fmt} briefing to {out_path}")
     else:
         echo(output)
@@ -1303,6 +1314,7 @@ def web_restore(obj, archive: str, force: bool) -> None:
 
     if archive == "-":
         base = obj.store.data_dir.parent
+        ensure_safe_target(base, "restore a backup")
         base.mkdir(parents=True, exist_ok=True)
         # Written, closed, then read back: Windows can't reopen a NamedTemporaryFile that is still open.
         fd, spool = tempfile.mkstemp(dir=base, prefix=".restore-", suffix=".tar.gz")
@@ -1424,7 +1436,7 @@ def demo(store: FileCaseStore, out_path: str, case_id: str) -> None:
         for line in lead_lines(lead, top, style, reasons=2):
             echo(line)
 
-    Path(out_path).write_text(render_html(data, notice=DEMO_NOTICE), encoding="utf-8")
+    write_out(out_path, render_html(data, notice=DEMO_NOTICE))
     echo("\n" + style.accent(f"Wrote HTML case file to {out_path}")
                + style.dim(" (open it in a browser; prints cleanly)"))
     echo(style.dim(f"Explore further: ark-angel lead list {case_id}   |   ark-angel report {case_id} --all"))

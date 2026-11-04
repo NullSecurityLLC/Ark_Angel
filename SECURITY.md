@@ -75,6 +75,12 @@ If you act in good faith and follow this policy:
 - We will treat your research as authorized.
 - We will work with you to understand and resolve the issue.
 
+## What it touches
+
+ArkAngel writes only to its data folder, files named with `--out`, and its own temp folder. It
+refuses operating-system folders (`ark_angel/safety.py`), even when run as Administrator or root.
+The release workflow runs each built executable in a sandbox to prove it.
+
 ## Fake copies
 
 Official release files are signed with GitHub build attestations. To check one, run

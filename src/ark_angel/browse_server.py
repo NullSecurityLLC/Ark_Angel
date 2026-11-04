@@ -25,6 +25,7 @@ from ark_angel.analysis.base import is_investigator_activity
 from ark_angel.analysis.correlate import entities_of, source_of
 from ark_angel.cases.store import FileCaseStore
 from ark_angel.ingest.browse_source import capture_to_evidence, parse_capture
+from ark_angel.safety import ensure_safe_target
 from ark_angel.textsafe import printable
 
 DEFAULT_PORT = 8766
@@ -39,6 +40,7 @@ def load_token(path: Path, rotate: bool = False) -> str:
         token = path.read_text(encoding="utf-8").strip()
         if len(token) >= 24:
             return token
+    ensure_safe_target(path, "save the recorder token")
     path.parent.mkdir(parents=True, exist_ok=True)
     token = secrets.token_urlsafe(24)
     path.write_text(token + "\n", encoding="utf-8")
