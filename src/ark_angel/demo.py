@@ -68,6 +68,9 @@ def make_email(path: Path, photo: Path) -> Path:
 
 def build_demo_case(store: FileCaseStore, workdir: Path, case_id: str = DEMO_CASE_ID, log=print) -> Case:
     """(Re)create the demo case: ingest text, photos and simulated hits, then enrich."""
+    from ark_angel.safety import ensure_safe_target
+
+    ensure_safe_target(workdir, "write the demo's input files")
     store.delete_case(case_id)
     store.create_case(Case(identifier=case_id, title=DEMO_TITLE))
     log(f"Created case {case_id}: {DEMO_TITLE}")

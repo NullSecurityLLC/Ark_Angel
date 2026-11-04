@@ -12,6 +12,7 @@ from typing import Iterable, TypeVar
 
 from ark_angel.cases.base import CaseStore
 from ark_angel.models import Case, Entity, Evidence, Lead, Place, Principal, Review
+from ark_angel.safety import ensure_safe_target
 
 CASE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
@@ -52,6 +53,7 @@ class FileCaseStore(CaseStore):
         self._write(case)
 
     def delete_case(self, case_id: str) -> None:
+        ensure_safe_target(self.data_dir, "delete cases")
         self._path(case_id).unlink(missing_ok=True)
 
     def get_case(self, case_id: str) -> Case:
@@ -78,6 +80,7 @@ class FileCaseStore(CaseStore):
         Owner-only (0600 in a 0700 folder): cases hold tippers' contact details and, in defender cases, a
         protected person's addresses. Other accounts on the same machine have no business reading them.
         """
+        ensure_safe_target(self.data_dir, "save cases")
         self.data_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         path = self._path(case.identifier)
         tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")

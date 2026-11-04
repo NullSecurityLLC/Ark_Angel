@@ -28,6 +28,9 @@ def _write(workdir: Path, name: str) -> Path:
 
 def build_defend_demo(store: FileCaseStore, workdir: Path, case_id: str = DEFEND_DEMO_ID, log=print) -> Case:
     """(Re)create the defender demo case, enrich it, simulate a remediation, and re-expose it."""
+    from ark_angel.safety import ensure_safe_target
+
+    ensure_safe_target(workdir, "write the demo's input files")
     store.delete_case(case_id)
     case = pipeline.create_defender_case(
         store, case_id, "Dana Whitlock", "the principal (simulated engagement letter, synthetic demo)",

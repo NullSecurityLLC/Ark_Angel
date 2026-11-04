@@ -32,6 +32,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
+from ark_angel.safety import ensure_safe_target
+
 log = logging.getLogger("ark_angel.web.backup")
 
 ARCHIVE_PREFIX = "arkangel-"
@@ -97,6 +99,7 @@ def _read_only(path: Path) -> sqlite3.Connection:
 
 def snapshot(data_dir: Path, db_path: Path, dest: Path) -> Path:
     """Write a ``.tar.gz`` of the site to ``dest`` (owner-only). Needs only read access to the data."""
+    ensure_safe_target(dest, "write a backup")
     base = data_dir.parent
     with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:
         copy_path = Path(tmp) / DB_NAME
@@ -169,6 +172,7 @@ def run_once(config: BackupConfig, data_dir: Path, db_path: Path,
         BackupError: any step failing (partial files are cleaned up).
     """
     stamp = (now or (lambda: datetime.now(timezone.utc)))()
+    ensure_safe_target(config.local_dir, "write backups")
     config.local_dir.mkdir(parents=True, exist_ok=True)
     plain = config.local_dir / archive_name(stamp)
     try:
@@ -237,6 +241,8 @@ def restore(archive: Path, data_dir: Path, db_path: Path, force: bool = False,
     refused. Returns that folder, or None if there was nothing to move.
     """
     base = data_dir.parent
+    for target in (data_dir, db_path, base):
+        ensure_safe_target(target, "restore a backup")
     targets = {DB_NAME: db_path, CASES_DIR: data_dir, **{name: base / name for name in FOLDERS}}
     existing = [p for p in targets.values() if p.exists()]
     if existing and not force:

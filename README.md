@@ -88,6 +88,32 @@ The executables aren't code-signed yet, so the OS will warn you the first time:
 - **Windows**: SmartScreen says "Windows protected your PC". Click *More info*, then *Run anyway*.
 - **macOS**: run `xattr -d com.apple.quarantine ark-angel-macos-arm64` once, or right-click, *Open*, then *Open* again.
 
+### What it touches on your computer
+
+Nothing outside the folder you run it from. There's no installer, no registry entries, no background
+service and no settings in your home folder. Delete the file and it's gone. Specifically, it writes:
+
+- **Case data** in `.ark_angel/` inside the folder you run it from, or wherever `--data-dir` points.
+  Files are owner-only.
+- **Files you ask for** with `--out`. The demo also writes `ark_angel_demo.html` and its sample
+  inputs next to it.
+- **Its own temporary folder** while it runs. The standalone executable unpacks itself there and
+  removes it on exit.
+
+It refuses to write into the operating system's folders, whatever path it's given and even when run
+as Administrator or root: `C:\Windows`, `C:\Program Files`, `C:\ProgramData`, a drive's top level,
+`/usr`, `/etc`, `/System` and similar. It never needs Administrator, so run it from a normal
+window. Every release build is checked for this: CI runs the real executable with its home and temp
+folders pointed at empty folders, confirms they stay empty, and confirms a write into the system
+folder is refused.
+
+The network is used only by commands that say `--online` (and `username`). Each one sends the
+minimum, listed in its section below.
+
+Some antivirus tools flag single-file Python executables, because the format unpacks itself into a
+temp folder before running. If yours does, check the file's attestation (below) and report the false
+positive to your antivirus vendor.
+
 ### Is this the real ArkAngel?
 
 ArkAngel handles tips about missing people and the addresses of people in hiding. A tampered copy

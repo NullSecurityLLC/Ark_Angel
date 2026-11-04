@@ -299,6 +299,10 @@ class SiteDB:
     def __init__(self, path: str | Path, clock: Callable[[], float] = time.time) -> None:
         self.path = Path(path)
         self.clock = clock
+        if not self.path.exists():
+            from ark_angel.safety import ensure_safe_target
+
+            ensure_safe_target(self.path, "create the site database")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if not self.path.exists():
             # Create it owner-only before SQLite opens it (no-op permissions on Windows).

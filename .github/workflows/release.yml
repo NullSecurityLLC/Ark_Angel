@@ -4,7 +4,8 @@
 # - Push a tag like v0.3.0: build, smoke-test, sign build provenance for every file, then create
 #   a DRAFT GitHub release with the wheel, the source archive, standalone executables, the browser
 #   extension and SHA256SUMS. A maintainer reviews the draft and clicks Publish.
-# - "Run workflow" (workflow_dispatch): build and keep the files as workflow artifacts.
+# - "Run workflow" (workflow_dispatch): build, smoke-test, sign, and keep everything as one artifact,
+#   "ark-angel-signed-build-<commit>", on the run's page. Not a release, but verifiable like one.
 
 name: Release
 
@@ -106,6 +107,41 @@ jobs:
           test -s demo.html
           "$exe" place find Boulder --state CO
           "$exe" --data-dir cases web users   # the website's web extras are bundled
+      # The executable must keep to its own folder. Run it with its home, AppData and temp folders pointed at
+      # empty sandbox folders: afterwards they must still be empty, and everything it wrote must sit in the
+      # folder it ran from. Then aim it at a system folder: it must refuse, even though GitHub's Windows
+      # runners run as Administrator and the write would otherwise succeed.
+      - name: Check it touches nothing outside its own folder
+        run: |
+          exe="$GITHUB_WORKSPACE/dist/${{ matrix.binary }}"
+          box="$RUNNER_TEMP/sandbox"
+          mkdir -p "$box/work" "$box/home" "$box/tmp"
+          export HOME="$box/home" USERPROFILE="$box/home" APPDATA="$box/home/AppData/Roaming" \
+            LOCALAPPDATA="$box/home/AppData/Local" XDG_CONFIG_HOME="$box/home/.config" \
+            XDG_CACHE_HOME="$box/home/.cache" XDG_DATA_HOME="$box/home/.local/share" \
+            TMP="$box/tmp" TEMP="$box/tmp" TMPDIR="$box/tmp"
+          cd "$box/work"
+          "$exe" --data-dir cases demo --out demo.html > /dev/null
+          "$exe" --data-dir cases defend demo > /dev/null
+          "$exe" --data-dir cases report DEMO --format md --out report.md
+          "$exe" --data-dir cases trail DEMO > /dev/null
+          "$exe" --data-dir cases web users > /dev/null
+          leftovers=$(find "$box/home" "$box/tmp" -mindepth 1 | head -20)
+          if [ -n "$leftovers" ]; then
+            echo "::error::the executable left files outside its working folder:"; echo "$leftovers"; exit 1
+          fi
+          echo "Everything it wrote, all inside $box/work:"
+          find . -type f | sort
+
+          if [ "$RUNNER_OS" = "Windows" ]; then target="$SYSTEMROOT\\arkangel-test"; else target="/usr/arkangel-test"; fi
+          if "$exe" --data-dir "$target" case create X x; then
+            echo "::error::it wrote into a system folder: $target"; exit 1
+          fi
+          if "$exe" --data-dir cases report DEMO --out "$target.html"; then
+            echo "::error::it wrote a report into a system folder: $target.html"; exit 1
+          fi
+          test ! -e "$target" && test ! -e "$target.html"
+          echo "Refused to write to $target, as it should."
       - name: Name the file for its platform
         run: |
           mkdir -p out
@@ -120,9 +156,11 @@ jobs:
           if-no-files-found: error
 
   draft-release:
-    name: Draft GitHub release
+    name: Sign the files (and draft the release, for tags)
     needs: [python-package, executable]
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Tags make a draft release. "Run workflow" builds are signed the same way and kept as one downloadable
+    # artifact, so a test build is just as verifiable. Pull requests never sign anything.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -155,7 +193,15 @@ jobs:
               --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" > /dev/null
             echo "verified: $file"
           done
+      - name: Keep the signed build (Run workflow)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ark-angel-signed-build-${{ github.sha }}
+          path: artifacts/*
+          if-no-files-found: error
       - name: Create draft release
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
