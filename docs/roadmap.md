@@ -41,7 +41,7 @@ enough to ship in a short iteration without breaking the end-to-end workflow.
       leads resurface on new evidence.
 - [x] Website (`ark-angel web`): public missing-person profiles and tip forms, member case
       workspaces with sharing, admin approval of accounts and every public profile, Docker + Caddy deploy.
-- Two-factor sign-in for members and admins.
+- [x] Two-factor sign-in (authenticator apps + recovery codes), required for admins by default.
 - [x] Email notifications (new tip, account requested/approved, profile to review/reviewed), link-only and throttled.
 - Printable missing-person flyer from an approved profile, with a QR code to its tip form.
 - [x] Nightly encrypted (age) off-site (rclone) backups with failure alerts, and `web restore`.

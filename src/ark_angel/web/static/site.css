@@ -185,3 +185,5 @@ details.block{margin-top:14px}
 }
 .match{color:var(--accent);font:600 13px/1.5 var(--mono)}
 .select{user-select:all;overflow-wrap:anywhere}
+.qr{display:block;background:#fff;padding:6px;border-radius:4px;margin:10px 0}
+.codes{list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px 18px;margin:10px 0}

@@ -34,7 +34,7 @@ class FakeMailer:
 def mailed(tmp_path: Path):
     site = Site(tmp_path)
     site.mailer = FakeMailer()
-    site.app = create_app(site.store, site.db, mailer=site.mailer)
+    site.app = create_app(site.store, site.db, mailer=site.mailer, require_2fa="off")
     site.app.config["TESTING"] = True
     site.db.set_email(site.db.user("boss")["id"], "boss@example.org")
     return site

@@ -3,6 +3,8 @@
 Protections, all enforced in one place (``_guard``) so a new route can't forget them:
 
 - ``/app`` pages need an approved account; ``/admin`` pages need an admin (others get a 404).
+- Two-factor sign-in: required for admins by default (``require_2fa``); until
+  someone who needs it has set it up, only their account page is reachable.
 - Every POST needs a CSRF token: the session's token when signed in, otherwise a
   double-submit token from an HttpOnly cookie (tip, sign-up and sign-in forms).
 - Cross-origin POSTs are refused, and requests must name an allowed Host, so a
@@ -26,7 +28,7 @@ from urllib.parse import urlsplit
 from flask import Flask, Response, abort, g, redirect, render_template, request, url_for
 
 from ark_angel.cases.store import FileCaseStore
-from ark_angel.web.db import ABSOLUTE_TIMEOUT_S, SiteDB, tokens_match
+from ark_angel.web.db import ABSOLUTE_TIMEOUT_S, REQUIRE_2FA, SiteDB, tokens_match
 from ark_angel.web.site import Site
 
 SESSION_COOKIE = "ark_session"
@@ -34,6 +36,8 @@ FORM_COOKIE = "ark_form"
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 PRIVATE_BLUEPRINTS = ("workspace", "admin")
+# Reachable before two-factor setup when the site requires it.
+MFA_SETUP_ENDPOINTS = ("workspace.account", "workspace.twofa_start", "workspace.twofa_confirm", "workspace.logout")
 
 SITE_CSP = ("default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; "
             "frame-ancestors 'none'; base-uri 'none'")
@@ -91,16 +95,20 @@ def user_agent() -> str:
 
 def create_app(store: FileCaseStore, db: SiteDB, base_dir: Optional[Path] = None,
                allowed_hosts: Iterable[str] = LOCAL_HOSTS, secure_cookies: bool = False,
-               site_name: str = "ArkAngel", mailer=None) -> Flask:
+               site_name: str = "ArkAngel", mailer=None, require_2fa: str = "admins") -> Flask:
     """Build the site. ``secure_cookies`` marks cookies HTTPS-only and turns on HSTS (use behind TLS).
 
     ``mailer`` sends notifications (see :mod:`ark_angel.web.notify`); without one, no email is sent.
+    ``require_2fa`` is ``"admins"`` (default), ``"everyone"`` or ``"off"``: who must set up two-factor
+    sign-in before using the site. Until they do, they only reach their account page.
     """
+    if require_2fa not in REQUIRE_2FA:
+        raise ValueError(f"require_2fa must be one of {', '.join(REQUIRE_2FA)}")
     from ark_angel.web import admin, public, recorder, workspace
 
     app = Flask(__name__)
     app.config.update(MAX_CONTENT_LENGTH=MAX_UPLOAD_BYTES + 1024 * 1024, TEMPLATES_AUTO_RELOAD=False,
-                      SITE_NAME=site_name, SECURE_COOKIES=secure_cookies)
+                      SITE_NAME=site_name, SECURE_COOKIES=secure_cookies, REQUIRE_2FA=require_2fa)
     app.extensions["ark_site"] = Site(store, db, Path(base_dir) if base_dir else store.data_dir.parent, mailer)
     hosts = {_host_only(h) for h in allowed_hosts}
     app.jinja_env.filters["when"] = _when
@@ -132,7 +140,18 @@ def create_app(store: FileCaseStore, db: SiteDB, base_dir: Optional[Path] = None
             expected = g.session.csrf_token if g.session else request.cookies.get(FORM_COOKIE, "")
             if not tokens_match(request.form.get("csrf_token", ""), expected):
                 abort(400)
+        if (g.session is not None and not g.session.mfa and must_have_2fa(g.session)
+                and request.blueprint in PRIVATE_BLUEPRINTS and request.endpoint not in MFA_SETUP_ENDPOINTS):
+            # Required but not set up yet: the account page (to set it up) and signing out are all that's open.
+            if request.method == "POST":
+                abort(403)
+            return redirect(url_for("workspace.account", notice="2fa_required") + "#two-factor")
         return None
+
+    def must_have_2fa(session) -> bool:
+        return require_2fa == "everyone" or (require_2fa == "admins" and session.is_admin)
+
+    app.extensions["ark_must_have_2fa"] = must_have_2fa
 
     def form_token() -> str:
         if g.get("session") is not None:

@@ -64,7 +64,10 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT NOT NULL DEFAULT '',
     notify_tips INTEGER NOT NULL DEFAULT 1,
     created_at REAL NOT NULL,
-    password_changed_at REAL NOT NULL
+    password_changed_at REAL NOT NULL,
+    totp_secret TEXT NOT NULL DEFAULT '',
+    totp_pending TEXT NOT NULL DEFAULT '',
+    totp_last_step INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
@@ -115,6 +118,18 @@ CREATE TABLE IF NOT EXISTS public_events (
     ip_hash TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS public_events_key ON public_events (kind, ip_hash, at);
+CREATE TABLE IF NOT EXISTS recovery_codes (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash TEXT NOT NULL,
+    used_at REAL
+);
+CREATE TABLE IF NOT EXISTS mfa_challenges (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at REAL NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS recorder_tokens (
     id INTEGER PRIMARY KEY,
     token_hash TEXT NOT NULL UNIQUE,
@@ -137,14 +152,22 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 # Checked against when the username doesn't exist, so a miss takes as long as a wrong password.
 _DUMMY_HASH = generate_password_hash(secrets.token_hex(16))
-FAILURE_OUTCOMES = ("bad_password", "unknown_user")
+# A wrong two-factor code counts toward the same lockout as a wrong password, so 6 digits can't be brute forced.
+FAILURE_OUTCOMES = ("bad_password", "unknown_user", "bad_code")
 # Fixed queries, one per lockout key: nothing is ever formatted into SQL.
 _FAILURE_SQL = {
-    "ip": "SELECT COUNT(*) FROM login_events WHERE ip = ? AND at > ? AND outcome IN (?, ?)",
-    "username": "SELECT COUNT(*) FROM login_events WHERE username = ? AND at > ? AND outcome IN (?, ?)",
+    "ip": "SELECT COUNT(*) FROM login_events WHERE ip = ? AND at > ? AND outcome IN (?, ?, ?)",
+    "username": "SELECT COUNT(*) FROM login_events WHERE username = ? AND at > ? AND outcome IN (?, ?, ?)",
 }
-_SESSION_SQL = ("SELECT s.*, u.username, u.role, u.status FROM sessions s JOIN users u ON u.id = s.user_id "
-                "WHERE s.token_hash = ?")
+_SESSION_SQL = ("SELECT s.*, u.username, u.role, u.status, u.totp_secret != '' AS mfa FROM sessions s "
+                "JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?")
+_USER_COLUMNS = "id, username, role, status, signup_note, email, notify_tips, created_at, totp_secret != '' AS mfa"
+
+# Two-factor sign-in
+MFA_TIMEOUT_S = 5 * 60  # time between the right password and the code
+MAX_MFA_ATTEMPTS = 5  # wrong codes per sign-in before starting over
+RECOVERY_CODES = 10
+REQUIRE_2FA = ("off", "admins", "everyone")
 
 
 # Browser-extension tokens: one case each, editor or owner only, checked again on every use.
@@ -188,14 +211,27 @@ class Session:
     ip: str
     user_agent: str
     token_hash: str = ""
+    mfa: bool = False  # the account has two-factor sign-in on
 
     @property
     def is_admin(self) -> bool:
         return self.role == "admin"
 
 
+@dataclass
+class MfaChallenge:
+    """The password was right; a code is still needed. ``token`` goes in a short-lived cookie."""
+
+    token: str
+    username: str
+
+
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _recovery_normal(code: str) -> str:
+    return "".join(ch for ch in code.lower() if ch.isalnum())
 
 
 def normalize_username(username: str) -> str:
@@ -265,6 +301,10 @@ class SiteDB:
             if "email" not in user_columns:  # databases made before email notifications
                 db.execute("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''")
                 db.execute("ALTER TABLE users ADD COLUMN notify_tips INTEGER NOT NULL DEFAULT 1")
+            if "totp_secret" not in user_columns:  # databases made before two-factor sign-in
+                db.execute("ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''")
+                db.execute("ALTER TABLE users ADD COLUMN totp_pending TEXT NOT NULL DEFAULT ''")
+                db.execute("ALTER TABLE users ADD COLUMN totp_last_step INTEGER NOT NULL DEFAULT 0")
             db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('secret', ?)", (secrets.token_hex(32),))
             self._secret = db.execute("SELECT value FROM settings WHERE key = 'secret'").fetchone()[0].encode()
 
@@ -301,15 +341,15 @@ class SiteDB:
 
     def user(self, username: str) -> Optional[sqlite3.Row]:
         with self._connect() as db:
-            return db.execute("SELECT id, username, role, status, signup_note, email, notify_tips, created_at FROM users "
+            return db.execute(f"SELECT {_USER_COLUMNS} FROM users "
                               "WHERE username = ?", (normalize_username(username),)).fetchone()
 
     def users(self, status: Optional[str] = None) -> list[sqlite3.Row]:
         with self._connect() as db:
             if status:
-                return db.execute("SELECT id, username, role, status, signup_note, email, notify_tips, created_at FROM users "
+                return db.execute(f"SELECT {_USER_COLUMNS} FROM users "
                                   "WHERE status = ? ORDER BY created_at", (status,)).fetchall()
-            return db.execute("SELECT id, username, role, status, signup_note, email, notify_tips, created_at FROM users "
+            return db.execute(f"SELECT {_USER_COLUMNS} FROM users "
                               "ORDER BY status = 'pending' DESC, username").fetchall()
 
     def usernames(self) -> list[str]:
@@ -321,8 +361,7 @@ class SiteDB:
 
     def user_by_id(self, user_id: int) -> Optional[sqlite3.Row]:
         with self._connect() as db:
-            return db.execute("SELECT id, username, role, status, signup_note, email, notify_tips, created_at "
-                              "FROM users WHERE id = ?", (user_id,)).fetchone()
+            return db.execute(f"SELECT {_USER_COLUMNS} FROM users WHERE id = ?", (user_id,)).fetchone()
 
     def set_email(self, user_id: int, email: str, notify_tips: bool = True) -> None:
         with self._connect() as db:
@@ -417,8 +456,11 @@ class SiteDB:
         db.execute("INSERT INTO login_events (at, username, ip, user_agent, outcome) VALUES (?, ?, ?, ?, ?)",
                    (self.clock(), username[:64], ip[:64], user_agent[:200], outcome))
 
-    def authenticate(self, username: str, password: str, ip: str, user_agent: str = "") -> Session:
-        """Check a sign-in and open a session for it.
+    def authenticate(self, username: str, password: str, ip: str, user_agent: str = "") -> Session | MfaChallenge:
+        """Check a sign-in and open a session for it, or, with two-factor on, a challenge for the code.
+
+        The right password alone never opens a session for a two-factor
+        account: it gets an :class:`MfaChallenge`, finished by :meth:`verify_mfa`.
 
         Raises:
             AuthError: wrong username or password (same message for both), locked out, or an
@@ -431,7 +473,7 @@ class SiteDB:
         # log entry back, and the lockout counts those entries.
         refusal = ""
         with self._connect() as db:
-            row = db.execute("SELECT id, password_hash, role, status FROM users WHERE username = ?",
+            row = db.execute("SELECT id, password_hash, role, status, totp_secret FROM users WHERE username = ?",
                              (name,)).fetchone()
             candidate = password if len(password) <= MAX_PASSWORD else ""
             if self._failures(db, "ip", ip, since) >= MAX_FAILURES_PER_IP:
@@ -448,18 +490,174 @@ class SiteDB:
             elif row["status"] != "active":
                 outcome, refusal = "disabled", "This account has been disabled."
             else:
-                outcome = "success"
+                outcome = "password_ok" if row["totp_secret"] else "success"
             self._log(db, name, ip, user_agent, outcome)
         if refusal:
             raise AuthError(refusal)
+        if row["totp_secret"]:
+            challenge = secrets.token_urlsafe(32)
+            with self._connect() as db:
+                db.execute("DELETE FROM mfa_challenges WHERE created_at < ? OR user_id = ?",
+                           (now - MFA_TIMEOUT_S, row["id"]))
+                db.execute("INSERT INTO mfa_challenges (token_hash, user_id, created_at) VALUES (?, ?, ?)",
+                           (_hash_token(challenge), row["id"], now))
+            return MfaChallenge(challenge, name)
+        return self._open_session(int(row["id"]), name, row["role"], bool(row["totp_secret"]), ip, user_agent)
+
+    def _open_session(self, user_id: int, name: str, role: str, mfa: bool, ip: str, user_agent: str) -> Session:
+        now = self.clock()
         with self._connect() as db:
             db.execute("DELETE FROM login_events WHERE at < ?", (now - EVENT_RETENTION_S,))
             token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
             db.execute("INSERT INTO sessions (token_hash, user_id, csrf_token, created_at, last_seen, ip, user_agent) "
                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                       (_hash_token(token), row["id"], csrf, now, now, ip[:64], user_agent[:200]))
-        return Session(token, int(row["id"]), name, row["role"], csrf, now, now, ip[:64], user_agent[:200],
-                       _hash_token(token))
+                       (_hash_token(token), user_id, csrf, now, now, ip[:64], user_agent[:200]))
+        return Session(token, user_id, name, role, csrf, now, now, ip[:64], user_agent[:200], _hash_token(token), mfa)
+
+    def mfa_pending(self, challenge: str) -> Optional[str]:
+        """The username a live sign-in challenge belongs to, or None."""
+        if not challenge or len(challenge) > 128:
+            return None
+        with self._connect() as db:
+            row = db.execute("SELECT u.username FROM mfa_challenges c JOIN users u ON u.id = c.user_id "
+                             "WHERE c.token_hash = ? AND c.created_at > ?",
+                             (_hash_token(challenge), self.clock() - MFA_TIMEOUT_S)).fetchone()
+        return row["username"] if row else None
+
+    def verify_mfa(self, challenge: str, code: str, ip: str, user_agent: str = "") -> Session:
+        """Finish a two-factor sign-in with an authenticator code or a recovery code.
+
+        Raises:
+            AuthError: an expired or used-up challenge, a lockout, or a wrong code. Wrong codes count
+                toward the same lockout as wrong passwords, and a challenge allows only a few.
+        """
+        now = self.clock()
+        since = now - LOCKOUT_WINDOW_S
+        refusal, session_row = "", None
+        with self._connect() as db:
+            row = db.execute("SELECT c.attempts, c.created_at, u.id, u.username, u.role, u.status, u.totp_secret, "
+                             "u.totp_last_step FROM mfa_challenges c JOIN users u ON u.id = c.user_id "
+                             "WHERE c.token_hash = ?", (_hash_token(challenge or ""),)).fetchone()
+            if row is None or now - row["created_at"] > MFA_TIMEOUT_S or not row["totp_secret"]:
+                if row is not None:
+                    db.execute("DELETE FROM mfa_challenges WHERE token_hash = ?", (_hash_token(challenge),))
+                raise AuthError("That sign-in timed out. Enter your password again.")
+            name = row["username"]
+            if row["status"] != "active":
+                outcome, refusal = "disabled", "This account has been disabled."
+            elif self._failures(db, "ip", ip, since) >= MAX_FAILURES_PER_IP:
+                outcome, refusal = "ip_blocked", "Too many failed sign-ins from this address. Try again later."
+            elif self._failures(db, "username", name, since) >= MAX_FAILURES_PER_USER:
+                outcome, refusal = "locked", "Too many failed sign-ins for this account. Try again later."
+            elif self._check_second_factor(db, row, code, now):
+                outcome, session_row = "success", row
+            else:
+                outcome, refusal = "bad_code", "That code didn't work. Check the time on your phone and try again."
+            self._log(db, name, ip, user_agent, outcome)
+            if session_row is not None or outcome != "bad_code" or row["attempts"] + 1 >= MAX_MFA_ATTEMPTS:
+                db.execute("DELETE FROM mfa_challenges WHERE token_hash = ?", (_hash_token(challenge),))
+                if outcome == "bad_code":
+                    refusal = "Too many wrong codes. Enter your password again."
+            else:
+                db.execute("UPDATE mfa_challenges SET attempts = attempts + 1 WHERE token_hash = ?",
+                           (_hash_token(challenge),))
+        if refusal:
+            raise AuthError(refusal)
+        return self._open_session(int(session_row["id"]), name, session_row["role"], True, ip, user_agent)
+
+    def _check_second_factor(self, db: sqlite3.Connection, user: sqlite3.Row, code: str, now: float) -> bool:
+        """An authenticator code (never the same one twice) or an unused recovery code. Uses it up."""
+        from ark_angel.web import totp
+
+        digits = "".join(code.split())
+        if digits.isdigit() and len(digits) == totp.DIGITS:
+            step = totp.verify(user["totp_secret"], digits, now, user["totp_last_step"])
+            if step is None:
+                return False
+            db.execute("UPDATE users SET totp_last_step = ? WHERE id = ?", (step, user["id"]))
+            return True
+        normalized = _recovery_normal(code)
+        if len(normalized) != 10:
+            return False
+        return db.execute("UPDATE recovery_codes SET used_at = ? WHERE user_id = ? AND code_hash = ? AND used_at IS NULL",
+                          (now, user["id"], _hash_token(normalized))).rowcount == 1
+
+    # Two-factor setup
+
+    def begin_totp(self, user_id: int) -> str:
+        """Start (or restart) setup: a new secret, kept aside until a code from it is confirmed."""
+        from ark_angel.web import totp
+
+        secret = totp.new_secret()
+        with self._connect() as db:
+            db.execute("UPDATE users SET totp_pending = ? WHERE id = ?", (secret, user_id))
+        return secret
+
+    def pending_totp(self, user_id: int) -> str:
+        with self._connect() as db:
+            row = db.execute("SELECT totp_pending FROM users WHERE id = ?", (user_id,)).fetchone()
+        return row["totp_pending"] if row else ""
+
+    def confirm_totp(self, user_id: int, code: str, ip: str = "", user_agent: str = "") -> list[str]:
+        """Turn two-factor on once a code from the pending secret checks out. Returns new recovery codes."""
+        from ark_angel.web import totp
+
+        now = self.clock()
+        with self._connect() as db:
+            row = db.execute("SELECT username, totp_pending FROM users WHERE id = ?", (user_id,)).fetchone()
+            if row is None or not row["totp_pending"]:
+                raise ValueError("start two-factor setup again")
+            step = totp.verify(row["totp_pending"], code, now)
+            if step is None:
+                raise ValueError("that code didn't match; check your phone's clock and try the newest code")
+            db.execute("UPDATE users SET totp_secret = totp_pending, totp_pending = '', totp_last_step = ? "
+                       "WHERE id = ?", (step, user_id))
+            codes = self._new_recovery_codes(db, user_id)
+            self._log(db, row["username"], ip, user_agent, "2fa_on")
+        return codes
+
+    def check_second_factor(self, user_id: int, code: str) -> bool:
+        """Re-confirm a signed-in user's second factor (before turning it off or replacing recovery codes)."""
+        now = self.clock()
+        with self._connect() as db:
+            row = db.execute("SELECT id, totp_secret, totp_last_step FROM users WHERE id = ?", (user_id,)).fetchone()
+            return bool(row and row["totp_secret"]) and self._check_second_factor(db, row, code, now)
+
+    def regenerate_recovery_codes(self, user_id: int) -> list[str]:
+        with self._connect() as db:
+            return self._new_recovery_codes(db, user_id)
+
+    def recovery_codes_left(self, user_id: int) -> int:
+        with self._connect() as db:
+            return int(db.execute("SELECT COUNT(*) FROM recovery_codes WHERE user_id = ? AND used_at IS NULL",
+                                  (user_id,)).fetchone()[0])
+
+    def disable_totp(self, user_id: int, ip: str = "", user_agent: str = "", outcome: str = "2fa_off") -> None:
+        with self._connect() as db:
+            row = db.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
+            db.execute("UPDATE users SET totp_secret = '', totp_pending = '', totp_last_step = 0 WHERE id = ?",
+                       (user_id,))
+            db.execute("DELETE FROM recovery_codes WHERE user_id = ?", (user_id,))
+            db.execute("DELETE FROM mfa_challenges WHERE user_id = ?", (user_id,))
+            if row is not None:
+                self._log(db, row["username"], ip, user_agent, outcome)
+
+    def reset_totp(self, username: str) -> None:
+        """An admin's way back in for someone who lost their phone and codes: two-factor off, signed out."""
+        user = self.user(username)
+        if user is None:
+            raise ValueError(f"no user {normalize_username(username)!r}")
+        self.disable_totp(int(user["id"]), "command line", "", "2fa_reset")
+        with self._connect() as db:
+            db.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+
+    def _new_recovery_codes(self, db: sqlite3.Connection, user_id: int) -> list[str]:
+        alphabet = "abcdefghjkmnpqrstuvwxyz23456789"  # no 0/o, 1/l/i to misread
+        codes = ["".join(secrets.choice(alphabet) for _ in range(10)) for _ in range(RECOVERY_CODES)]
+        db.execute("DELETE FROM recovery_codes WHERE user_id = ?", (user_id,))
+        db.executemany("INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)",
+                       [(user_id, _hash_token(code)) for code in codes])
+        return [f"{code[:5]}-{code[5:]}" for code in codes]
 
     # Sessions
 
@@ -479,7 +677,7 @@ class SiteDB:
                 return None
             db.execute("UPDATE sessions SET last_seen = ? WHERE token_hash = ?", (now, token_hash))
         return Session("", int(row["user_id"]), row["username"], row["role"], row["csrf_token"], row["created_at"],
-                       now, row["ip"], row["user_agent"], token_hash)
+                       now, row["ip"], row["user_agent"], token_hash, bool(row["mfa"]))
 
     def end_session(self, token: str, ip: str = "", user_agent: str = "") -> None:
         with self._connect() as db:

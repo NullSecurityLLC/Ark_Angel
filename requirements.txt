@@ -5,4 +5,5 @@ requests>=2.33
 urllib3>=2.8
 pytest>=7.4
 Flask>=3.0
+segno>=1.6
 waitress>=3.0.1
