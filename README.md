@@ -95,7 +95,7 @@ Check your download against `SHA256SUMS.txt` on the release page
 
 ```bash
 pipx install git+https://github.com/NullSecurityLLC/Ark_Angel.git   # latest
-pipx install ./ark_angel-0.2.0-py3-none-any.whl                      # or the wheel from a release
+pipx install ./ark_angel-0.3.0-py3-none-any.whl                      # or the wheel from a release
 ```
 
 ## Quickstart
