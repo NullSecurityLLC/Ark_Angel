@@ -226,6 +226,17 @@ class MfaChallenge:
     username: str
 
 
+def _sign_out_everywhere(db: sqlite3.Connection, username: str) -> None:
+    """End every way an account is signed in: sessions, half-finished two-factor sign-ins and recorder tokens.
+
+    Used whenever an account might be in the wrong hands (password change, disabling, two-factor reset), so a
+    token minted from a hijacked session can't outlive the fix.
+    """
+    for table in ("sessions", "mfa_challenges", "recorder_tokens"):
+        db.execute(f"DELETE FROM {table} WHERE user_id = (SELECT id FROM users WHERE username = ?)",  # nosec B608
+                   (username,))
+
+
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -408,7 +419,7 @@ class SiteDB:
                              (generate_password_hash(password), self.clock(), name))
             if cur.rowcount == 0:
                 raise ValueError(f"no user {name!r}")
-            db.execute("DELETE FROM sessions WHERE user_id = (SELECT id FROM users WHERE username = ?)", (name,))
+            _sign_out_everywhere(db, name)
 
     def check_password(self, user_id: int, password: str) -> bool:
         """For re-confirming a signed-in user (e.g. before a password change)."""
@@ -427,7 +438,7 @@ class SiteDB:
             if db.execute("UPDATE users SET status = ? WHERE username = ?", (status, name)).rowcount == 0:
                 raise ValueError(f"no user {name!r}")
             if status != "active":
-                db.execute("DELETE FROM sessions WHERE user_id = (SELECT id FROM users WHERE username = ?)", (name,))
+                _sign_out_everywhere(db, name)
 
     def set_role(self, username: str, role: str) -> None:
         if role not in ROLES:
@@ -649,7 +660,7 @@ class SiteDB:
             raise ValueError(f"no user {normalize_username(username)!r}")
         self.disable_totp(int(user["id"]), "command line", "", "2fa_reset")
         with self._connect() as db:
-            db.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+            _sign_out_everywhere(db, user["username"])
 
     def _new_recovery_codes(self, db: sqlite3.Connection, user_id: int) -> list[str]:
         alphabet = "abcdefghjkmnpqrstuvwxyz23456789"  # no 0/o, 1/l/i to misread
@@ -685,6 +696,11 @@ class SiteDB:
             db.execute("DELETE FROM sessions WHERE token_hash = ?", (_hash_token(token),))
             if row is not None:
                 self._log(db, row["username"], ip, user_agent, "logout")
+
+    def revoke_recorder_tokens_for(self, user_id: int) -> int:
+        """Revoke every recorder token a user holds, on every case."""
+        with self._connect() as db:
+            return db.execute("DELETE FROM recorder_tokens WHERE user_id = ?", (user_id,)).rowcount
 
     def end_other_sessions(self, current: Session) -> int:
         with self._connect() as db:

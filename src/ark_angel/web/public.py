@@ -102,7 +102,13 @@ def submit_tip(slug: str):
                 photo_path = save_evidence_photo(s, case_id, data)
             except UploadError as exc:
                 return render_template("public/profile.html", case=case, errors=[str(exc)], form=form), 400
-        _add_tip(case_id, form, photo_path)
+        try:
+            _add_tip(case_id, form, photo_path)
+        except Exception:
+            # Never leave an orphaned upload behind: repeated failures would quietly fill the disk.
+            if photo_path is not None:
+                photo_path.unlink(missing_ok=True)
+            raise
     notify.tip_received(s, case_id)
     return redirect(url_for("public.thanks", slug=slug))
 
@@ -129,7 +135,11 @@ def _add_tip(case_id: str, form: dict, photo_path) -> None:
     leads = []
     if photo_path is not None:
         metadata["photo"] = photo_path.name
-        photo_item, leads = ImageIngestionSource().ingest(str(photo_path))
+        try:
+            photo_item, leads = ImageIngestionSource().ingest(str(photo_path))
+        except Exception:  # odd metadata in a stranger's photo must never cost us the tip itself
+            current_app.logger.exception("couldn't read the metadata of a tip photo; keeping the tip without it")
+            photo_item, leads = None, []
         if photo_item is not None:
             # Same tipster, same source: a photo shouldn't count as independent corroboration of their own tip.
             photo_item.metadata.update(source=TIP_SOURCE, tip=tip_id, path=photo_path.name)

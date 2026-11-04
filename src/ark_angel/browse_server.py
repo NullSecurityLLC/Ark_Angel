@@ -25,6 +25,7 @@ from ark_angel.analysis.base import is_investigator_activity
 from ark_angel.analysis.correlate import entities_of, source_of
 from ark_angel.cases.store import FileCaseStore
 from ark_angel.ingest.browse_source import capture_to_evidence, parse_capture
+from ark_angel.textsafe import printable
 
 DEFAULT_PORT = 8766
 MAX_BODY = 2 * 1024 * 1024
@@ -90,10 +91,11 @@ def capture_hits(evidence, index: Index, labels: dict[str, str]) -> list[dict]:
 
 
 def describe(evidence) -> str:
+    """One capture for the receiver's live log. Page titles come from any site you visit: no escape codes."""
     meta = evidence.metadata
-    return (f'search "{meta.get("query")}"' if meta["kind"] == "search" else
-            f"clip from {meta['host']}" if meta["kind"] == "clip" else
-            f"{meta.get('title') or meta['url']} ({meta['host']})")
+    return printable(f'search "{meta.get("query")}"' if meta["kind"] == "search" else
+                     f"clip from {meta['host']}" if meta["kind"] == "clip" else
+                     f"{meta.get('title') or meta['url']} ({meta['host']})")
 
 
 class Recorder:
@@ -120,7 +122,7 @@ class Recorder:
         meta = evidence.metadata
         self.log(f"  {meta['timestamp'][11:16]}  {meta['kind']:<6} {describe(evidence)}")
         for hit in hits:
-            self.log(f"           MATCH {hit['kind']} {hit['value']}: also in {', '.join(hit['seen_in'])}")
+            self.log(printable(f"           MATCH {hit['kind']} {hit['value']}: also in {', '.join(hit['seen_in'])}"))
         return {"stored": evidence.identifier, "kind": meta["kind"], "hits": hits}
 
     def status(self) -> dict:

@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, Optional, Sequence
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 from ark_angel.analysis.base import INVESTIGATOR_ORIGIN
 from ark_angel.analysis.extract import extract_entities, parse_datetime
@@ -83,6 +83,35 @@ _RESERVED = {
     "pricing", "enterprise", "marketplace", "sponsors", "issues", "pulls", "new", "profile.php", "photo.php",
     "people", "friends", "business", "ads", "policies", "compose", "tos", "jobs", "feed", "following",
 }
+
+
+# Query parameters that carry secrets: password-reset and magic sign-in links, OAuth codes, signed downloads,
+# session ids. They'd otherwise land in a case the whole team reads, and in every export of it.
+_SECRET_PARAM_NAMES = {
+    "code", "state", "key", "apikey", "sid", "auth", "otp", "ticket", "nonce", "jwt", "sig", "hash", "pwd", "pass",
+    "samlresponse", "samlrequest", "oauth_verifier", "client_id", "magic", "t",
+}
+_SECRET_PARAM_PARTS = ("token", "secret", "password", "passwd", "signature", "session", "credential",
+                       "auth_", "api_key", "x-amz-", "reset")
+REDACTED = "REDACTED"
+
+
+def scrub_url(url: str) -> str:
+    """``url`` with credentials, secret-looking query values and token fragments removed. Search terms stay."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    params = [(name, REDACTED if _secret_param(name) else value)
+              for name, value in parse_qsl(parts.query, keep_blank_values=True)]
+    # A fragment with "=" in it is OAuth's implicit flow (#access_token=...), not an anchor on the page.
+    fragment = "" if "=" in parts.fragment else parts.fragment
+    return urlunsplit((parts.scheme, host, parts.path, urlencode(params, safe="/:@,"), fragment))
+
+
+def _secret_param(name: str) -> bool:
+    lowered = name.lower()
+    return lowered in _SECRET_PARAM_NAMES or any(part in lowered for part in _SECRET_PARAM_PARTS)
 
 
 @dataclass
@@ -201,7 +230,9 @@ def capture_id(capture: Capture) -> str:
 
 
 def capture_to_evidence(capture: Capture, watch: Sequence[str] = ()) -> Evidence:
-    """One capture as an investigator-origin evidence item."""
+    """One capture as an investigator-origin evidence item. The URL is scrubbed of secrets first."""
+    capture = Capture(url=scrub_url(capture.url), when=capture.when, kind=capture.kind, title=capture.title,
+                      text=capture.text, selection=capture.selection, session=capture.session)
     host = _host(capture.url)
     search = search_query(capture.url)
     profile = profile_handle(capture.url)

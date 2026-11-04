@@ -75,6 +75,27 @@ If you act in good faith and follow this policy:
 - We will treat your research as authorized.
 - We will work with you to understand and resolve the issue.
 
+## Untrusted input, by design
+
+Most of what ArkAngel handles was written by strangers: tips, emails, chat
+exports, photos, web pages the Recorder captured, and names in OpenStreetMap.
+Evidence is stored exactly as it arrived, and made safe on the way out for
+wherever it's shown. Reports of anything that slips through are very welcome:
+
+- **Terminal output:** no escape sequences, so text can't rewrite the screen,
+  retitle the window, fake links or write to the clipboard. No bidirectional
+  overrides either.
+- **HTML report and website:** everything is HTML-escaped, under a strict
+  Content-Security-Policy.
+- **Markdown reports:** links, images and HTML are escaped, so nothing in a
+  preview loads from someone else's server.
+- **CSV exports:** no cell can run as a spreadsheet formula.
+- **KML and GeoJSON:** no markup in pin names or details.
+- **Parsers:** malformed photo metadata is ignored instead of crashing a tip.
+  Text extraction runs in linear time on hostile input.
+- **Captured URLs:** tokens, sign-in codes and embedded passwords are removed
+  before they're stored.
+
 ## Final Notes
 
 Ark Angel is a security-focused project by design. We expect both users and

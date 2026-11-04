@@ -10,7 +10,7 @@ from ark_angel.models import Evidence
 
 pytest.importorskip("flask")
 
-from web_helpers import new_case, post, site  # noqa: E402,F401  (site is a fixture)
+from web_helpers import login, new_case, post, site  # noqa: E402,F401  (site is a fixture)
 
 TIP = Evidence("tips:1", "text", "Riley texted from 303-555-0147", {"source": "tips"})
 AD = {"url": "https://classifieds.example/ad/1", "title": "Room for rent", "when": "2026-11-02T14:02:00",
@@ -119,12 +119,17 @@ def test_access_is_rechecked_on_every_capture(site, case) -> None:
     site.db.remove_member(case_id, "eddie")  # removed from the case
     assert _api(site, "/status", token).status_code == 401
     site.db.set_member(case_id, "eddie", "editor")
-    site.db.set_status("eddie", "disabled")  # account disabled
-    assert _api(site, "/status", token).status_code == 401
-    site.db.set_status("eddie", "active")
-    assert _api(site, "/status", token).status_code == 200
     site.clock.now += 31 * 86400  # expired
     assert _api(site, "/status", token).status_code == 401
+
+    editor = site.client()  # 31 days on, the old web session is long gone too
+    login(editor, "eddie")
+    fresh = _make_token(editor, case_id)
+    site.db.set_status("eddie", "disabled")  # account disabled: its tokens are revoked, not just paused
+    assert _api(site, "/status", fresh).status_code == 401
+    site.db.set_status("eddie", "active")
+    assert _api(site, "/status", fresh).status_code == 401
+    assert site.db.recorder_tokens(case_id, site.db.user("eddie")["id"]) == []
 
 
 def test_tokens_are_scoped_revocable_and_capped(site, case) -> None:

@@ -488,10 +488,14 @@ def twofa_confirm():
         codes = s.db.confirm_totp(g.session.user_id, request.form.get("code", "")[:16], client_ip(), user_agent())
     except ValueError as exc:
         return _render_account(mfa_error=_sentence(exc), setup=True)
-    # Whoever else might be signed in as you didn't pass a second factor: sign them out.
+    # Whoever else might be signed in as you didn't pass a second factor: sign them out, and revoke recorder
+    # tokens, which could have been made from one of those sessions.
     s.db.end_other_sessions(g.session)
+    revoked = s.db.revoke_recorder_tokens_for(g.session.user_id)
     g.session.mfa = True
-    return _render_account(notice_text="Two-factor sign-in is on. Your other sessions were signed out.",
+    extra = f" and {revoked} recorder token{'s' if revoked != 1 else ''} revoked (make new ones on the case's " \
+            "Recorder tab)" if revoked else ""
+    return _render_account(notice_text=f"Two-factor sign-in is on. Your other sessions were signed out{extra}.",
                            recovery_codes=codes)
 
 

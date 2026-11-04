@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 from ark_angel.analysis.trail import Step, Trail
 from ark_angel.style import PLAIN, Style
+from ark_angel.textsafe import md, md_url, printable
 
 _ICONS = {"search": "search", "visit": "page", "clip": "clip"}
 
@@ -19,16 +20,16 @@ def _span(delta: Optional[timedelta]) -> str:
 
 
 def _key(key: tuple[str, str]) -> str:
-    return f"{key[0]} {key[1]}"
+    return printable(f"{key[0]} {key[1]}")
 
 
 def _step_notes(step: Step) -> list[str]:
     notes = []
     for key, seen in step.pivots.items():
         where = f"in {seen.label}" if seen.when is None else f"on {seen.label} at {seen.when:%H:%M}"
-        notes.append(f"pivot: {_key(key)}, which you'd seen {where}")
+        notes.append(printable(f"pivot: {_key(key)}, which you'd seen {where}"))
     for key, ids in step.hits.items():
-        notes.append(f"MATCH: {_key(key)} is also in {', '.join(ids[:4])}{' …' if len(ids) > 4 else ''}")
+        notes.append(printable(f"MATCH: {_key(key)} is also in {', '.join(ids[:4])}{' …' if len(ids) > 4 else ''}"))
     return notes
 
 
@@ -66,7 +67,7 @@ def render_trail_text(trail: Trail, case_id: str, style: Style = PLAIN, session:
              style.dim(f"{len(trail.sessions)} session(s) {dot} {len(steps) - searches} pages {dot} "
                        f"{searches} searches {dot} {matched} page(s) matching the case")]
     if trail.domains:
-        lines.append(style.dim("most visited: " + ", ".join(f"{h} ({n})" for h, n in trail.domains[:6])))
+        lines.append(style.dim("most visited: " + ", ".join(f"{printable(h)} ({n})" for h, n in trail.domains[:6])))
 
     lines += ["", style.heading("Threads you followed")]
     if not trail.threads:
@@ -80,7 +81,7 @@ def render_trail_text(trail: Trail, case_id: str, style: Style = PLAIN, session:
         lines.append(style.dim("  none: everything you clipped or matched, you followed up"))
     for key, seen, ids in trail.loose_ends[:10]:
         why = f"matches {', '.join(ids[:3])}" if ids else "you clipped it"
-        lines.append(f"  {style.accent(_key(key))}  seen {seen.when:%m-%d %H:%M} on {seen.host or seen.label}"
+        lines.append(f"  {style.accent(_key(key))}  seen {seen.when:%m-%d %H:%M} on {printable(seen.host or seen.label)}"
                      f" {dot} {why} {dot} {style.dim('never looked up')}")
 
     for number, se in enumerate(trail.sessions, start=1):
@@ -90,8 +91,8 @@ def render_trail_text(trail: Trail, case_id: str, style: Style = PLAIN, session:
         for s in se.steps:
             dwell = _span(s.dwell)
             head = f"  {style.accent(f'{s.when:%H:%M}')}  {_ICONS[s.kind]:<6} "
-            body = f'"{s.label}"' if s.kind == "search" else s.label
-            where = f"  {style.dim(s.host)}" if s.host and s.kind != "search" else ""
+            body = printable(f'"{s.label}"' if s.kind == "search" else s.label)
+            where = f"  {style.dim(printable(s.host))}" if s.host and s.kind != "search" else ""
             lines.append(head + style.strong(body) + where + (style.dim(f"  {dwell}") if dwell else ""))
             for note in _step_notes(s):
                 lines.append(" " * 17 + (style.accent(note) if note.startswith("MATCH") else style.dim(note)))
@@ -99,25 +100,27 @@ def render_trail_text(trail: Trail, case_id: str, style: Style = PLAIN, session:
 
 
 def render_trail_markdown(trail: Trail, case_id: str) -> str:
-    out = [f"# Investigator trail: {case_id}", ""]
+    """Markdown with captured titles, hosts and URLs escaped: a page can't plant links or images in it."""
+    out = [f"# Investigator trail: {md(case_id)}", ""]
     if trail.threads:
         out += ["## Threads you followed", ""]
-        out += [f"- **{_key(k)}**: " + " → ".join(f"{s.when:%H:%M} {_ICONS[s.kind]} ({s.evidence_id})" for s in run)
+        out += [f"- **{md(_key(k))}**: " + " → ".join(f"{s.when:%H:%M} {_ICONS[s.kind]} ({md(s.evidence_id)})"
+                                                     for s in run)
                 for k, run in trail.threads]
         out.append("")
     if trail.loose_ends:
         out += ["## Loose ends", ""]
-        out += [f"- **{_key(k)}**, seen {s.when:%Y-%m-%d %H:%M} on {s.host}"
-                + (f", matches {', '.join(ids)}" if ids else ", clipped") for k, s, ids in trail.loose_ends]
+        out += [f"- **{md(_key(k))}**, seen {s.when:%Y-%m-%d %H:%M} on {md(s.host)}"
+                + (f", matches {md(', '.join(ids))}" if ids else ", clipped") for k, s, ids in trail.loose_ends]
         out.append("")
     for number, se in enumerate(trail.sessions, start=1):
         out += [f"## Session {number}: {se.start:%Y-%m-%d %H:%M}–{se.end:%H:%M}", "",
                 "| Time | What | Where | Time spent | Notes |", "|---|---|---|---|---|"]
         for s in se.steps:
-            label = s.label.replace("|", "\\|")
-            what = f"{_ICONS[s.kind]}: [{label}]({s.url})" if s.url and s.kind != "search" else f"{_ICONS[s.kind]}: {label}"
-            notes = "; ".join(_step_notes(s)).replace("|", "\\|")
-            out.append(f"| {s.when:%H:%M} | {what} | {s.host} | {_span(s.dwell)} | {notes} |")
+            url = md_url(s.url) if s.kind != "search" else ""
+            what = f"{_ICONS[s.kind]}: [{md(s.label)}]({url})" if url else f"{_ICONS[s.kind]}: {md(s.label)}"
+            notes = "; ".join(md(note) for note in _step_notes(s))
+            out.append(f"| {s.when:%H:%M} | {what} | {md(s.host)} | {_span(s.dwell)} | {notes} |")
         out.append("")
     return "\n".join(out) + "\n"
 
