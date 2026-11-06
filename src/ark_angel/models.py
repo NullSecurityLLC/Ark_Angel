@@ -131,6 +131,44 @@ class Review:
 
 
 @dataclass
+class Protocol:
+    """God's Eye: a principal-defender case's standby emergency protocol.
+
+    It sits on standby until activated by a missed check-in, a duress code or by
+    hand. Then it seals a fingerprint of the case and produces an emergency
+    briefing for police and the protection team. It only ever reads the case's
+    own evidence: it tracks nobody.
+
+    Attributes:
+        state: ``"off"``, ``"standby"`` (armed) or ``"active"``.
+        checkin_hours: Hours allowed between check-ins before it activates by
+            itself; 0 means no deadline (manual and duress activation only).
+        last_checkin: ISO-8601 UTC time of the latest check-in (or arming).
+        code_hash: Salted scrypt hash of the check-in code.
+        duress_hash: Salted scrypt hash of the duress code: a check-in that
+            looks normal on screen but activates the protocol.
+        contacts: Emergency contacts' email addresses, alerted on activation.
+        activated_at: ISO-8601 UTC time of the current activation.
+        trigger: What activated it: ``"manual"``, ``"missed check-in"`` or ``"duress"``.
+        reason: The note given on activation.
+        snapshot_sha256: SHA-256 of the case as it stood at activation.
+        events: Append-only log of everything that happened to the protocol.
+    """
+
+    state: str = "off"
+    checkin_hours: float = 0
+    last_checkin: str = ""
+    code_hash: str = ""
+    duress_hash: str = ""
+    contacts: List[str] = field(default_factory=list)
+    activated_at: str = ""
+    trigger: str = ""
+    reason: str = ""
+    snapshot_sha256: str = ""
+    events: List[dict] = field(default_factory=list)
+
+
+@dataclass
 class Principal:
     """The person a principal-defender case protects.
 
@@ -163,6 +201,7 @@ class Principal:
     plates: List[str] = field(default_factory=list)
     places: List[Place] = field(default_factory=list)
     created_at: str = ""
+    protocol: Protocol = field(default_factory=Protocol)
 
 
 @dataclass

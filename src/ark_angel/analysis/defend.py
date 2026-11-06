@@ -342,8 +342,11 @@ def touches_sensitive(latitude: float, longitude: float, spread_m: float, places
                for place in places)
 
 
-def _routine(times: Sequence[datetime]) -> str:
-    """Describe the most repeated weekday + time-of-day slot, if anything repeats."""
+def routine_slot(times: Sequence[datetime]) -> Optional[tuple[int, int, int]]:
+    """The most repeated weekday + time-of-day slot as ``(weekday, minute of day, times)``, if anything repeats.
+
+    A routine needs at least two visits on different days, on the same weekday, within two hours of each other.
+    """
     best: list[datetime] = []
     for anchor in times:
         group = [t for t in times if t.weekday() == anchor.weekday()
@@ -351,10 +354,23 @@ def _routine(times: Sequence[datetime]) -> str:
         if len(group) > len(best):
             best = group
     if len(best) < 2 or len({t.date() for t in best}) < 2:
-        return ""
+        return None
     minutes = sorted(t.hour * 60 + t.minute for t in best)
-    median = minutes[len(minutes) // 2]
-    return f"{best[0]:%A}s around {median // 60:02d}:{median % 60:02d} ({len(best)} times)"
+    return best[0].weekday(), minutes[len(minutes) // 2], len(best)
+
+
+def describe_slot(slot: tuple[int, int, int]) -> str:
+    weekday, minute, count = slot
+    return f"{_WEEKDAYS[weekday]}s around {minute // 60:02d}:{minute % 60:02d} ({count} times)"
+
+
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def _routine(times: Sequence[datetime]) -> str:
+    """Describe the most repeated weekday + time-of-day slot, if anything repeats."""
+    slot = routine_slot(times)
+    return describe_slot(slot) if slot else ""
 
 
 def _pattern_leads(correlation: CaseAnalysis, identity: _Identity, by_id: dict[str, Evidence]) -> list[Lead]:
@@ -461,7 +477,8 @@ def _threat_leads(evidence: Sequence[Evidence], identity: _Identity) -> list[Lea
             evidence_ids=[item.identifier for item, _ in ordered],
             score=round(score, 2),
             reasons=reasons,
-            entities=[Entity(kind="actor", value=actor)],
+            # The sensitive places this sender knows, as data: the emergency briefing searches those first.
+            entities=[Entity(kind="actor", value=actor)] + [Entity(kind="place", value=name) for name in known],
             source="analysis",
         ))
     return leads

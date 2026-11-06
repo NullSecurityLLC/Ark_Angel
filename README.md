@@ -251,6 +251,45 @@ the audit trail: who decided, when, why, and what evidence the lead had then.
 
 Set `ARK_ANGEL_REVIEWER` (or pass `--by`) to record who made each call.
 
+### God's Eye: the standby emergency protocol
+
+Every defender case can have God's Eye, an emergency protocol that waits on standby until something activates
+it. It never tracks anyone: there's no phone tracking, no scraping, and no watching people who didn't agree to
+it. It only ever reads what the case already holds, under the principal's own authorization.
+
+```bash
+ark-angel defend godseye arm P1 --every 24 --contact team@example.org   # asks for a check-in code and a duress code
+ark-angel defend godseye checkin P1                                       # at least every 24 hours
+ark-angel defend godseye status P1
+ark-angel defend godseye brief P1 --format md --out briefing.md           # what police get
+ark-angel defend godseye watch                                            # notices missed check-ins (or use the website)
+```
+
+It activates on any of three things:
+
+- **A missed check-in.** No check-in within the interval and it fires by itself. The website watches deadlines
+  every minute. On the command line, run `godseye watch`, or `godseye watch --once` from cron or Task Scheduler.
+- **The duress code.** If the principal is made to check in, they use the duress code instead. The screen shows
+  exactly what a normal check-in shows, on the command line and on the website, but the alarm goes out.
+- **A person on the case**, with `godseye activate P1 --reason "..."` or the button on the God's Eye tab.
+
+When it fires, it seals a SHA-256 fingerprint of the case as it stood, logs who, when and why, and emails the
+emergency contacts and the case team. The email holds no case content, just that it fired and where to read the
+briefing. The **emergency briefing** contains:
+
+- **What to do now:** call the police, which places to check first, who to name to the police, and getting
+  camera footage preserved.
+- **Where to look first, time-aware.** A routine that falls *right now* goes to the top, such as "Tuesdays around
+  06:14, and it's Tuesday 06:30". Next come their last known location, sensitive places a threatening sender
+  knows, their other sensitive places, and their regular spots, each with a map link.
+- **The threats:** each threatening sender with their identifiers, whether they're escalating, which of the
+  principal's places they know, and when they last wrote.
+- **The principal's identifiers**, what's exposed about them, and the integrity fingerprints.
+
+Codes are stored only as salted scrypt hashes, and they're always typed at a hidden prompt, never as command
+arguments that would land in shell history. One limit: after a duress check-in, the case's own pages (the
+God's Eye tab and `godseye status`) do show it's active. Check in somewhere the other person won't keep browsing.
+
 ## Recording your browsing
 
 Logging an investigation by hand is the part everybody skips. Let the browser do it.

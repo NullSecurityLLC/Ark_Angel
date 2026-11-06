@@ -4,6 +4,7 @@
 <nav class="tabs" aria-label="Case">
   <a href="{{ url_for('workspace.case', case_id=g.case.identifier) }}"{% if ep == 'workspace.case' %} aria-current="page"{% endif %}>Leads</a>
   <a href="{{ url_for('workspace.tips', case_id=g.case.identifier) }}"{% if ep == 'workspace.tips' %} aria-current="page"{% endif %}>Website tips</a>
+  {% if g.case.principal is not none %}<a href="{{ url_for('workspace.godseye_page', case_id=g.case.identifier) }}"{% if ep == 'workspace.godseye_page' %} aria-current="page"{% endif %}>God's Eye{% if g.case.principal.protocol.state == 'active' %} <span class="tag alarm">ACTIVE</span>{% elif g.case.principal.protocol.state == 'standby' %} <span class="tag">standby</span>{% endif %}</a>{% endif %}
   <a href="{{ url_for('workspace.trail', case_id=g.case.identifier) }}"{% if ep == 'workspace.trail' %} aria-current="page"{% endif %}>Trail</a>
   {% if g.role in ('editor', 'owner') %}<a href="{{ url_for('workspace.upload', case_id=g.case.identifier) }}"{% if ep == 'workspace.upload' %} aria-current="page"{% endif %}>Add evidence</a>{% endif %}
   {% if g.role in ('editor', 'owner') %}<a href="{{ url_for('workspace.recorder', case_id=g.case.identifier) }}"{% if ep == 'workspace.recorder' %} aria-current="page"{% endif %}>Recorder</a>{% endif %}
