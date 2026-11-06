@@ -70,6 +70,10 @@ enough to ship in a short iteration without breaking the end-to-end workflow.
 - Threat lexicons for other languages, and per-case custom phrases.
 - HTML briefing to hand to a protection team.
 
+- [x] God's Eye: standby emergency protocol for defender cases (check-ins, duress code, deadline watcher,
+      time-aware emergency briefing, link-only alerts).
+- God's Eye: printable one-page HTML briefing, and SMS alerts through a provider the operator configures.
+
 ## Phase 4: Scale
 
 - Relationship graph view across entities.

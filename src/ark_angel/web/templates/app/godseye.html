@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}God's Eye · {{ g.case.title }}{% endblock %}
+{% block body %}
+{% include "app/_case_nav.html" %}
+{% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+
+{% if protocol.state == 'active' %}
+<div class="alarm-banner" role="alert">
+  <b>GOD'S EYE ACTIVE</b> since {{ protocol.activated_at[:16].replace('T', ' ') }} UTC: {{ protocol.trigger }}{% if protocol.reason %}. {{ protocol.reason }}{% endif %}
+</div>
+{% endif %}
+
+<section class="prose">
+<h2>Standby emergency protocol</h2>
+<p>God's Eye waits on standby. A <b>missed check-in</b>, the <b>duress code</b> or a person here activates it. Activation
+seals a fingerprint of the case, alerts the emergency contacts and the case team by email, and opens the emergency
+briefing below. It tracks nobody: it reads only this case's evidence.</p>
+<div class="meta">
+  <span>State <b>{{ protocol.state.upper() }}</b></span>
+  {% if due %}<span>Next check-in due <b>{{ due.strftime('%Y-%m-%d %H:%M') }} UTC</b>{% if overdue %} <span class="tag alarm">OVERDUE</span>{% endif %}</span>{% endif %}
+  {% if protocol.contacts %}<span>Contacts <b>{{ protocol.contacts|join(', ') }}</b></span>{% endif %}
+</div>
+</section>
+
+{% if can_act %}
+{% if protocol.state in ('standby', 'active') %}
+<section>
+<h2>Check in</h2>
+<form method="post" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="ci-code" class="sr">Code</label>
+  <input id="ci-code" name="code" type="password" autocomplete="off" required maxlength="128" placeholder="Check-in code">
+  <button name="action" value="checkin" class="btn primary">Check in</button>
+</form>
+</section>
+{% endif %}
+
+{% if protocol.state == 'active' %}
+<section>
+<h2>Stand down</h2>
+<form method="post" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="sd-note" class="sr">Why</label>
+  <input id="sd-note" name="note" required maxlength="500" placeholder="Why, e.g. principal reached in person, safe">
+  <button name="action" value="stand_down" class="btn">Stand down</button>
+</form>
+</section>
+{% elif protocol.state == 'standby' %}
+<section>
+<h2>Activate now</h2>
+<form method="post" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="ac-reason" class="sr">Why</label>
+  <input id="ac-reason" name="reason" required maxlength="500" placeholder="Why, e.g. principal unreachable since 18:00">
+  <button name="action" value="activate" class="btn danger">Activate God's Eye</button>
+</form>
+</section>
+{% endif %}
+
+{% if protocol.state != 'active' %}
+<details class="block"{% if protocol.state == 'off' %} open{% endif %}>
+<summary>{{ "Arm God's Eye" if protocol.state == 'off' else "Change settings (re-arm)" }}</summary>
+<form method="post" class="stack narrow-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="code">Check-in code</label>
+  <input id="code" name="code" type="password" autocomplete="new-password" required minlength="4" maxlength="128">
+  <label for="code2">Check-in code again</label>
+  <input id="code2" name="code2" type="password" autocomplete="new-password" required minlength="4" maxlength="128">
+  <label for="duress">Duress code (optional): checks in normally on screen, but raises the alarm</label>
+  <input id="duress" name="duress" type="password" autocomplete="new-password" maxlength="128">
+  <label for="duress2">Duress code again</label>
+  <input id="duress2" name="duress2" type="password" autocomplete="new-password" maxlength="128">
+  <label for="every">Hours between check-ins (0 for no deadline)</label>
+  <input id="every" name="every" inputmode="decimal" value="{{ protocol.checkin_hours|int if protocol.checkin_hours else 24 }}">
+  <label for="contacts">Emergency contacts' emails, one per line (the case team is always alerted too)</label>
+  <textarea id="contacts" name="contacts" rows="3">{{ protocol.contacts|join('\n') }}</textarea>
+  <button name="action" value="arm" class="btn primary">{{ "Arm" if protocol.state == 'off' else "Re-arm" }}</button>
+</form>
+{% if protocol.state == 'standby' %}
+<form method="post" class="actions">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button name="action" value="disarm" class="btn ghost">Turn God's Eye off</button>
+</form>
+{% endif %}
+<p class="fine">Codes are stored only as salted scrypt hashes. A duress check-in shows the same "Checked in" page as a
+normal one; the case's own pages do show the protocol is active, so check in somewhere the other person won't keep
+browsing. The site checks deadlines every minute by itself.</p>
+</details>
+{% endif %}
+{% endif %}
+
+<section>
+<h2>Emergency briefing{% if protocol.state != 'active' %} <span class="dim">(not activated: what it would say now)</span>{% endif %}</h2>
+<details class="block"{% if protocol.state == 'active' %} open{% endif %}>
+<summary>{{ "Read it" if protocol.state != 'active' else "Briefing" }} · as of {{ data.generated_local }} server time</summary>
+<h3>Do now</h3>
+<ol>{% for a in data.actions %}<li>{{ a }}</li>{% endfor %}</ol>
+<h3>Where to look first</h3>
+{% if data.places %}
+<div class="table-wrap"><table>
+<thead><tr><th>#</th><th>Place</th><th>Why</th><th></th></tr></thead>
+<tbody>{% for p in data.places %}<tr><td class="mono">{{ loop.index }}</td><td><b>{{ p.label }}</b><br><span class="dim mono">{{ "%.5f, %.5f"|format(p.latitude, p.longitude) }}</span></td><td>{{ p.why }}</td><td><a href="{{ p.map }}" rel="noopener noreferrer" target="_blank">map</a></td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="empty">No places in the evidence yet.</p>{% endif %}
+<h3>Threats</h3>
+{% if data.threats %}<ul class="reasons">{% for t in data.threats %}<li><b>{{ t.name }}</b>{% if t.escalating %} <span class="tag alarm">escalating</span>{% endif %}{% if t.knows %} <span class="tag alarm">knows {{ t.knows|join(', ') }}</span>{% endif %}<br>{{ t.summary }}{% if t.identifiers %}<br>identifiers: {{ t.identifiers|join(', ') }}{% endif %}{% if t.latest %}<br>last message {{ t.latest }}{% endif %}</li>{% endfor %}</ul>
+{% else %}<p class="empty">No threatening messages in the evidence.</p>{% endif %}
+<h3>The principal</h3>
+<dl>
+  <dt>Name</dt><dd>{{ data.principal.name }}{% if data.principal.aliases %} (also {{ data.principal.aliases|join(', ') }}){% endif %}</dd>
+  {% for label, key in (('Phones', 'phones'), ('Emails', 'emails'), ('Handles', 'handles'), ('Plates', 'plates')) %}{% if data.principal[key] %}<dt>{{ label }}</dt><dd class="mono">{{ data.principal[key]|join(', ') }}</dd>{% endif %}{% endfor %}
+</dl>
+<h3>Integrity</h3>
+<p class="mono dim">{% if protocol.snapshot_sha256 %}case at activation {{ protocol.snapshot_sha256 }}<br>{% endif %}case now {{ data.protocol.current_sha256 }}</p>
+</details>
+</section>
+
+{% if protocol.events %}
+<section>
+<h2>Log</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>When (UTC)</th><th>What</th><th>Who</th><th>Note</th></tr></thead>
+<tbody>{% for e in protocol.events|reverse %}<tr><td class="mono">{{ e.at[:16].replace('T', ' ') }}</td><td>{{ e.event }}</td><td class="mono">{{ e.by }}</td><td>{{ e.reason or e.note or '' }}</td></tr>{% endfor %}</tbody>
+</table></div>
+</section>
+{% endif %}
+{% endblock %}

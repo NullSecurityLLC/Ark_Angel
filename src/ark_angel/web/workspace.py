@@ -52,6 +52,10 @@ NOTICES = {
     "signed_out_others": "Your other sessions were signed out.",
     "email": "Email settings saved.",
     "2fa_required": "This site requires two-factor sign-in for your account. Set it up below to carry on.",
+    "ge_armed": "God's Eye is on standby.",
+    "ge_active": "God's Eye is ACTIVE. The emergency contacts and the case team were alerted.",
+    "ge_stood_down": "Stood down. God's Eye is back on standby and the check-in clock restarts now.",
+    "ge_off": "God's Eye is off.",
     "revoked": "Recorder token revoked. The extension using it can't add anything to this case now.",
 }
 
@@ -323,6 +327,89 @@ def trail(case_id: str):
         by = ""
     data = build_trail(g.case.evidence, by=by)
     return render_template("app/trail.html", trail=data, recorders=recorders, by=by, notes=_step_notes, span=_span)
+
+
+# God's Eye (defender cases): the standby emergency protocol
+
+
+def _render_godseye(error: str = "", notice_text: str = ""):
+    from ark_angel import godseye
+
+    protocol = g.case.principal.protocol
+    data = godseye.briefing(g.case)
+    due = godseye.deadline(protocol)
+    page = render_template("app/godseye.html", protocol=protocol, data=data, due=due,
+                           overdue=bool(due and due <= godseye._utcnow()), error=error, notice=notice_text,
+                           can_act=g.role in ("editor", "owner"))
+    return page, 400 if error else 200
+
+
+@bp.route("/cases/<case_id>/godseye", methods=["GET", "POST"])
+@case_route("viewer")
+def godseye_page(case_id: str):
+    from ark_angel import godseye
+    from ark_angel.web.godseye import notify_activation
+
+    if g.case.principal is None:
+        abort(404)
+    if request.method == "GET":
+        return _render_godseye(notice_text=notice())
+    if g.role not in ("editor", "owner"):
+        abort(403)
+    s = site()
+    action = request.form.get("action", "")
+    who = g.session.username
+    with s.case_lock(case_id):
+        case = s.store.get_case(case_id)
+        alert = False
+        try:
+            if action == "arm":
+                code, duress = request.form.get("code", ""), request.form.get("duress", "")
+                if code != request.form.get("code2", "") or duress != request.form.get("duress2", ""):
+                    raise godseye.ProtocolError("the codes and their repeats don't match")
+                try:
+                    hours = float(request.form.get("every", "0") or 0)
+                except ValueError:
+                    raise godseye.ProtocolError("the check-in interval must be a number of hours") from None
+                contacts = tuple(c.strip() for c in request.form.get("contacts", "").replace(",", "\n").split("\n"))
+                godseye.arm(case, code, duress, hours, tuple(c for c in contacts if c), who)
+                key = "ge_armed"
+            elif action == "checkin":
+                alert = godseye.check_in(case, request.form.get("code", "")[:256], who)
+                key = None  # the same neutral confirmation for both kinds of check-in
+            elif action == "activate":
+                godseye.activate(case, "manual", request.form.get("reason", ""), who)
+                alert, key = True, "ge_active"
+            elif action == "stand_down":
+                godseye.stand_down(case, request.form.get("note", ""), who)
+                key = "ge_stood_down"
+            elif action == "disarm":
+                godseye.disarm(case, who)
+                key = "ge_off"
+            else:
+                abort(400)
+        except godseye.ProtocolError as exc:
+            if action == "checkin":
+                return render_template("app/checked_in.html", error=str(exc)[:1].upper() + str(exc)[1:] + "."), 400
+            g.case = case
+            return _render_godseye(error=str(exc)[:1].upper() + str(exc)[1:] + ".")
+        s.store.save_case(case)
+    if alert:
+        notify_activation(s, case, url_for("workspace.godseye_page", case_id=case_id, _external=True))
+    if key is None:
+        # A duress check-in must look exactly like a normal one to whoever is watching the screen: this page says
+        # only "checked in" and when the next one is due, never the protocol's state.
+        return render_template("app/checked_in.html", error="", due=_next_due(case.principal.protocol))
+    return redirect(url_for("workspace.godseye_page", case_id=case_id, notice=key))
+
+
+def _next_due(protocol):
+    from datetime import timedelta
+
+    from ark_angel import godseye
+
+    last = godseye._parse(protocol.last_checkin)
+    return last + timedelta(hours=protocol.checkin_hours) if last and protocol.checkin_hours else None
 
 
 # Public profile

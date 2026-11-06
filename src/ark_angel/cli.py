@@ -1040,6 +1040,238 @@ def defend_brief(store: FileCaseStore, case_id: str, fmt: str, out_path: str, sh
         echo(output)
 
 
+# God's Eye: the defender case's standby emergency protocol
+
+
+@defend_group.group("godseye", help="God's Eye: a standby emergency protocol for the principal (arm, check in, "
+                                    "activate, brief).")
+def godseye_group() -> None:
+    """God's Eye stays on standby until activated: by a missed check-in, a duress code, or by hand.
+
+    Activation seals a fingerprint of the case, alerts the emergency contacts,
+    and produces an emergency briefing: where to look first (time-aware), who the
+    threats are and what each knows, and what to do now. It tracks nobody: it
+    reads only this case's evidence.
+    """
+
+
+def _godseye_save(store: FileCaseStore, case) -> None:
+    store.save_case(case)
+
+
+def _godseye_alert(case, quiet: bool = False) -> None:
+    from ark_angel.godseye import alert_contacts
+
+    sent, problem = alert_contacts(case)
+    if quiet:
+        return  # a duress activation must look like nothing happened
+    if sent:
+        echo(f"Alerted {sent} emergency contact(s) by email.")
+    else:
+        echo(f"No email sent: {problem}. Tell the emergency contacts yourself.")
+
+
+def _when_local(iso: str) -> str:
+    from datetime import datetime
+
+    try:
+        return datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return iso
+
+
+@godseye_group.command("arm")
+@click.argument("case_id")
+@click.option("--every", "checkin_hours", type=float, default=0, show_default=True,
+              help="Hours allowed between check-ins; a missed one activates it. 0: no deadline.")
+@click.option("--contact", "contacts", multiple=True, help="Emergency contact's email, alerted on activation "
+                                                          "(repeatable; needs ARK_ANGEL_SMTP_* to send).")
+@click.option("--no-duress", is_flag=True, help="Don't set a duress code.")
+@click.option("--by", "reviewer", help="Who is arming it (default: $ARK_ANGEL_REVIEWER or your login).")
+@click.pass_obj
+def godseye_arm(store: FileCaseStore, case_id: str, checkin_hours: float, contacts: tuple, no_duress: bool,
+                reviewer: str) -> None:
+    """Put God's Eye on standby. Asks for a check-in code and a duress code (hidden).
+
+    The duress code is for checking in under pressure: on screen it looks exactly
+    like a normal check-in, but it activates the protocol and alerts the contacts.
+    """
+    from ark_angel import godseye
+    from ark_angel.review import default_reviewer
+
+    case = pipeline.defender_case(store, case_id)
+    code = click.prompt("Check-in code", hide_input=True, confirmation_prompt=True)
+    duress = "" if no_duress else click.prompt("Duress code (looks like a normal check-in, but raises the alarm)",
+                                               hide_input=True, confirmation_prompt=True)
+    protocol = godseye.arm(case, code, duress, checkin_hours, contacts, reviewer or default_reviewer())
+    _godseye_save(store, case)
+    due = godseye.deadline(protocol)
+    echo(f"God's Eye is on standby for {case_id!r}." + (f" Next check-in due by {due.astimezone():%Y-%m-%d %H:%M}."
+                                                        if due else " No check-in deadline."))
+    if protocol.duress_hash:
+        echo("Memorize the duress code; don't write it next to the check-in code.")
+    if protocol.contacts:
+        echo(f"Emergency contacts: {', '.join(protocol.contacts)}")
+    if protocol.checkin_hours:
+        echo("Deadlines are only noticed while something is watching: run `ark-angel defend godseye watch` "
+             "(or the website, which watches by itself).")
+
+
+@godseye_group.command("checkin")
+@click.argument("case_id")
+@click.option("--by", "reviewer", help="Who is checking in.")
+@click.pass_obj
+def godseye_checkin(store: FileCaseStore, case_id: str, reviewer: str) -> None:
+    """Check in with the code (asked for, hidden). Resets the deadline."""
+    from datetime import timedelta
+
+    from ark_angel import godseye
+    from ark_angel.review import default_reviewer
+
+    case = pipeline.defender_case(store, case_id)
+    code = click.prompt("Code", hide_input=True)
+    duress = godseye.check_in(case, code, reviewer or default_reviewer())
+    _godseye_save(store, case)
+    if duress:
+        _godseye_alert(case, quiet=True)
+    # Exactly the same output either way: someone forcing this check-in must not be able to tell.
+    protocol = case.principal.protocol
+    due = ""
+    if protocol.checkin_hours:
+        last = godseye._parse(protocol.last_checkin)
+        due = f" Next check-in due by {(last + timedelta(hours=protocol.checkin_hours)).astimezone():%Y-%m-%d %H:%M}."
+    echo(f"Checked in.{due}")
+
+
+@godseye_group.command("activate")
+@click.argument("case_id")
+@click.option("--reason", required=True, help="Why (goes in the log and the briefing).")
+@click.option("--by", "reviewer", help="Who is activating it.")
+@click.pass_obj
+def godseye_activate(store: FileCaseStore, case_id: str, reason: str, reviewer: str) -> None:
+    """Activate God's Eye now and alert the emergency contacts."""
+    from ark_angel import godseye
+    from ark_angel.review import default_reviewer
+
+    case = pipeline.defender_case(store, case_id)
+    if case.principal.protocol.state == "active":
+        raise click.ClickException("God's Eye is already active")
+    godseye.activate(case, "manual", reason, reviewer or default_reviewer())
+    _godseye_save(store, case)
+    echo(f"GOD'S EYE ACTIVE for {case_id!r}. Case fingerprint {case.principal.protocol.snapshot_sha256}")
+    _godseye_alert(case)
+    echo(f"Emergency briefing: ark-angel defend godseye brief {case_id}  (--format md --out briefing.md to print)")
+
+
+@godseye_group.command("stand-down")
+@click.argument("case_id")
+@click.option("--note", required=True, help="Why (e.g. \"principal reached, safe\").")
+@click.option("--by", "reviewer", help="Who is standing it down.")
+@click.pass_obj
+def godseye_stand_down(store: FileCaseStore, case_id: str, note: str, reviewer: str) -> None:
+    """End an activation (the principal is safe) and go back to standby."""
+    from ark_angel import godseye
+    from ark_angel.review import default_reviewer
+
+    case = pipeline.defender_case(store, case_id)
+    godseye.stand_down(case, note, reviewer or default_reviewer())
+    _godseye_save(store, case)
+    echo(f"Stood down. God's Eye is back on standby for {case_id!r}; the check-in clock restarts now.")
+
+
+@godseye_group.command("disarm")
+@click.argument("case_id")
+@click.option("--by", "reviewer", help="Who is disarming it.")
+@click.pass_obj
+def godseye_disarm(store: FileCaseStore, case_id: str, reviewer: str) -> None:
+    """Turn God's Eye off (codes are forgotten)."""
+    from ark_angel import godseye
+    from ark_angel.review import default_reviewer
+
+    case = pipeline.defender_case(store, case_id)
+    godseye.disarm(case, reviewer or default_reviewer())
+    _godseye_save(store, case)
+    echo(f"God's Eye is off for {case_id!r}.")
+
+
+@godseye_group.command("status")
+@click.argument("case_id")
+@click.pass_obj
+def godseye_status(store: FileCaseStore, case_id: str) -> None:
+    """Show God's Eye's state, deadline and log."""
+    from ark_angel import godseye
+
+    case = pipeline.defender_case(store, case_id)
+    protocol = case.principal.protocol
+    echo(f"{case_id}: God's Eye {protocol.state.upper()}")
+    if protocol.state == "active":
+        echo(f"  activated {_when_local(protocol.activated_at)} by {protocol.trigger}: {printable(protocol.reason)}")
+    due = godseye.deadline(protocol)
+    if due:
+        echo(f"  next check-in due by {due.astimezone():%Y-%m-%d %H:%M}"
+             + ("  (OVERDUE)" if due <= godseye._utcnow() else ""))
+    if protocol.contacts:
+        echo(f"  emergency contacts: {', '.join(protocol.contacts)}")
+    if protocol.events:
+        echo("  log:")
+    for event in protocol.events[-12:]:
+        detail = event.get("reason") or event.get("note") or event.get("trigger") or ""
+        echo(f"    {_when_local(event['at'])}  {event['event']:<16} {printable(event.get('by', ''))}"
+             + (f"  {printable(detail)}" if detail and event["event"] != "activated" else ""))
+
+
+@godseye_group.command("brief")
+@click.argument("case_id")
+@click.option("--format", "fmt", type=click.Choice(["text", "md", "json"]), default="text", show_default=True)
+@click.option("--out", "out_path", type=click.Path(dir_okay=False), help="Write to a file instead of stdout.")
+@click.pass_obj
+def godseye_brief(store: FileCaseStore, case_id: str, fmt: str, out_path: str) -> None:
+    """The emergency briefing: what to do now, where to look first, threats, identifiers, integrity."""
+    from ark_angel import godseye
+    from ark_angel.report.godseye import render_godseye_json, render_godseye_markdown, render_godseye_text
+    from ark_angel.style import PLAIN, terminal_style
+
+    data = godseye.briefing(pipeline.defender_case(store, case_id))
+    output = {"text": lambda: render_godseye_text(data, PLAIN if out_path else terminal_style()),
+              "md": lambda: render_godseye_markdown(data), "json": lambda: render_godseye_json(data)}[fmt]()
+    if out_path:
+        write_out(out_path, output)
+        echo(f"Wrote {fmt} briefing to {out_path}")
+    else:
+        echo(output)
+
+
+@godseye_group.command("watch")
+@click.option("--every", "interval", type=int, default=60, show_default=True, help="Seconds between checks.")
+@click.option("--once", is_flag=True, help="Check once and exit (for cron or Task Scheduler).")
+@click.pass_obj
+def godseye_watch(store: FileCaseStore, interval: int, once: bool) -> None:
+    """Watch every armed defender case's check-in deadline; activate and alert when one is missed."""
+    import signal
+
+    from ark_angel import godseye
+
+    def _stop(*_):
+        raise KeyboardInterrupt
+
+    try:
+        signal.signal(signal.SIGTERM, _stop)
+    except (ValueError, AttributeError):
+        pass
+    if not once:
+        echo(f"Watching God's Eye deadlines every {interval}s. Ctrl+C stops.")
+    try:
+        while True:
+            for case_id in godseye.sweep(store, store.list_cases()):
+                echo(f"GOD'S EYE ACTIVE for {case_id!r}: missed check-in.")
+                _godseye_alert(store.get_case(case_id))
+            if once:
+                return
+            time.sleep(max(interval, 5))
+    except KeyboardInterrupt:
+        echo("Stopped watching.")
+
+
 @defend_group.command("demo")
 @click.option("--case-id", default="DEFEND-DEMO", show_default=True, help="Case id to (re)build the demo under.")
 @click.pass_obj
@@ -1393,6 +1625,12 @@ def web_serve(obj, host: str, port: int, allow_hosts: tuple, behind_proxy: bool,
     echo({"admins": "Two-factor sign-in: required for admins",
                 "everyone": "Two-factor sign-in: required for everyone",
                 "off": "Two-factor sign-in: optional (--require-2fa off)"}[require_2fa])
+    from ark_angel.web.godseye import start_watcher
+
+    # God's Eye check-in deadlines are watched by the site itself, so a missed one fires even with nobody looking.
+    public = f"https://{allow_hosts[0]}" if behind_proxy and allow_hosts else f"http://{shown}:{port}"
+    start_watcher(app.extensions["ark_site"], public)
+    echo("God's Eye: watching check-in deadlines every minute")
     echo("Ctrl+C to stop.")
     proxy = {"trusted_proxy": proxy_ip, "trusted_proxy_count": 1,
              "trusted_proxy_headers": {"x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"}} \

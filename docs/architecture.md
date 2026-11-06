@@ -78,6 +78,12 @@ ingest ──> evidence (case JSON) ──> extract ──> correlate ──> ra
   It is stdlib `http.server` on 127.0.0.1 with a pairing token. It refuses web-page Origins and
   non-localhost Host headers, caps request bodies at 2 MB, and stores each capture immediately while
   checking it against the case.
+- **godseye.py**: God's Eye, a defender case's standby emergency protocol. It's a state machine (off, standby,
+  active) with scrypt-hashed check-in and duress codes, deadline checks (`sweep`), activation that seals a
+  case fingerprint, and the time-aware emergency briefing built from `analysis/defend.py` (`routine_slot`, each
+  threat lead's known places). `report/godseye.py` renders it. `web/godseye.py` runs the site's deadline
+  watcher thread and sends link-only activation emails; the workspace's God's Eye tab arms it, takes check-ins
+  (a duress check-in gets the same neutral page as a normal one), activates and stands it down.
 - **review.py**: lead review. The append-only `Case.reviews` log is matched
   back onto freshly rebuilt leads, with score-ordered lead numbers, geo-cluster
   carry-over by evidence overlap, and dismissed leads resurfacing on new evidence.

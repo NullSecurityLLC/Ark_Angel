@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Iterable, TypeVar
 
 from ark_angel.cases.base import CaseStore
-from ark_angel.models import Case, Entity, Evidence, Lead, Place, Principal, Review
+from ark_angel.models import Case, Entity, Evidence, Lead, Place, Principal, Protocol, Review
 from ark_angel.safety import ensure_safe_target
 
 CASE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
@@ -126,7 +126,8 @@ def _principal_from_dict(data: dict | None) -> Principal | None:
         return None
     data = dict(data)
     places = [Place(**place) for place in data.pop("places", [])]
-    return Principal(**data, places=places)
+    protocol = Protocol(**data.pop("protocol", None) or {})  # cases from before God's Eye have none
+    return Principal(**data, places=places, protocol=protocol)
 
 
 def _case_from_dict(data: dict) -> Case:

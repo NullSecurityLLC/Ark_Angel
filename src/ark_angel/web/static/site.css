@@ -187,3 +187,6 @@ details.block{margin-top:14px}
 .select{user-select:all;overflow-wrap:anywhere}
 .qr{display:block;background:#fff;padding:6px;border-radius:4px;margin:10px 0}
 .codes{list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px 18px;margin:10px 0}
+.tag.alarm{color:#fff;background:var(--danger);border-color:var(--danger)}
+.alarm-banner{padding:14px 16px;border-left:4px solid var(--danger);background:var(--surface-2);margin:12px 0;font-size:17px}
+.alarm-banner b{color:var(--danger)}
