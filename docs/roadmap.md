@@ -74,6 +74,8 @@ enough to ship in a short iteration without breaking the end-to-end workflow.
       time-aware emergency briefing, link-only alerts).
 - God's Eye: printable one-page HTML briefing, and SMS alerts through a provider the operator configures.
 
+- [x] Operator succession: a trusted successor takes over cases and the admin role after inactivity or a request, plus a cancelable waiting period.
+
 ## Phase 4: Scale
 
 - Relationship graph view across entities.

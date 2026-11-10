@@ -1396,6 +1396,26 @@ def web_delete_user(obj, username: str) -> None:
     echo(f"Deleted {username.strip().lower()!r}")
 
 
+@web_group.command("successions")
+@click.pass_obj
+def web_successions(obj) -> None:
+    """Who has named a successor, and any handover under way."""
+    from datetime import datetime, timezone
+
+    def when(ts):
+        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC") if ts else ""
+
+    rows = obj.db.all_successions()
+    if not rows:
+        echo("Nobody has named a successor.")
+    for r in rows:
+        status = {"designated": f"after {r['inactive_days']}d inactive + {r['wait_days']}d wait",
+                  "pending": f"HANDOVER UNDER WAY, completes {when(r['due_at'])} (requested by {r['requested_by']})",
+                  "completed": f"handed over {when(r['completed_at'])}"}[r["state"]]
+        echo(f"{r['primary_name']:<20} -> {r['successor_name']:<20} {status}  "
+             f"(last active {when(r['primary_last_active'])})")
+
+
 @web_group.command("reset-2fa")
 @click.argument("username")
 @click.confirmation_option(prompt="Turn off two-factor sign-in for this account and sign it out everywhere?")

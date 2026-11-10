@@ -67,7 +67,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_changed_at REAL NOT NULL,
     totp_secret TEXT NOT NULL DEFAULT '',
     totp_pending TEXT NOT NULL DEFAULT '',
-    totp_last_step INTEGER NOT NULL DEFAULT 0
+    totp_last_step INTEGER NOT NULL DEFAULT 0,
+    last_active_at REAL
 );
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
@@ -118,6 +119,18 @@ CREATE TABLE IF NOT EXISTS public_events (
     ip_hash TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS public_events_key ON public_events (kind, ip_hash, at);
+CREATE TABLE IF NOT EXISTS successions (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    successor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    inactive_days INTEGER NOT NULL,
+    wait_days INTEGER NOT NULL,
+    state TEXT NOT NULL DEFAULT 'designated' CHECK (state IN ('designated', 'pending', 'completed')),
+    created_at REAL NOT NULL,
+    requested_at REAL,
+    requested_by TEXT NOT NULL DEFAULT '',
+    due_at REAL,
+    completed_at REAL
+);
 CREATE TABLE IF NOT EXISTS recovery_codes (
     id INTEGER PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -170,6 +183,14 @@ RECOVERY_CODES = 10
 REQUIRE_2FA = ("off", "admins", "everyone")
 
 
+# Succession: inactivity limits and waiting periods offered (days).
+SUCCESSION_INACTIVE_DAYS = (14, 30, 60, 90)
+SUCCESSION_WAIT_DAYS = (2, 7, 14, 30)
+_SUCCESSION_SQL = ("SELECT s.*, p.username AS primary_name, p.email AS primary_email, p.role AS primary_role, "
+                   "COALESCE(p.last_active_at, p.created_at) AS primary_last_active, q.username AS successor_name, "
+                   "q.email AS successor_email FROM successions s JOIN users p ON p.id = s.user_id "
+                   "JOIN users q ON q.id = s.successor_id ")
+
 # Browser-extension tokens: one case each, editor or owner only, checked again on every use.
 RECORDER_TOKEN_PREFIX = "arkrec_"
 RECORDER_TOKEN_DAYS = (7, 30, 90)
@@ -212,6 +233,7 @@ class Session:
     user_agent: str
     token_hash: str = ""
     mfa: bool = False  # the account has two-factor sign-in on
+    handover_canceled: bool = False  # this request's activity just canceled a pending handover of the account
 
     @property
     def is_admin(self) -> bool:
@@ -224,6 +246,18 @@ class MfaChallenge:
 
     token: str
     username: str
+
+
+def _mark_active(db: sqlite3.Connection, user_id: int, username: str, now: float) -> bool:
+    """Record that a person is active. If a handover of their account was pending, that cancels it: being around
+    is the answer to "are they gone?". Returns True if this canceled one."""
+    db.execute("UPDATE users SET last_active_at = ? WHERE id = ?", (now, user_id))
+    canceled = db.execute("UPDATE successions SET state = 'designated', requested_at = NULL, requested_by = '', "
+                          "due_at = NULL WHERE user_id = ? AND state = 'pending'", (user_id,)).rowcount > 0
+    if canceled:
+        db.execute("INSERT INTO login_events (at, username, ip, user_agent, outcome) VALUES (?, ?, '', '', ?)",
+                   (now, username, "handover_canceled"))
+    return canceled
 
 
 def _sign_out_everywhere(db: sqlite3.Connection, username: str) -> None:
@@ -316,6 +350,10 @@ class SiteDB:
             if "email" not in user_columns:  # databases made before email notifications
                 db.execute("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''")
                 db.execute("ALTER TABLE users ADD COLUMN notify_tips INTEGER NOT NULL DEFAULT 1")
+            if "last_active_at" not in user_columns:  # databases made before succession
+                db.execute("ALTER TABLE users ADD COLUMN last_active_at REAL")
+                db.execute("UPDATE users SET last_active_at = COALESCE((SELECT MAX(at) FROM login_events e "
+                           "WHERE e.username = users.username AND e.outcome = 'success'), created_at)")
             if "totp_secret" not in user_columns:  # databases made before two-factor sign-in
                 db.execute("ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''")
                 db.execute("ALTER TABLE users ADD COLUMN totp_pending TEXT NOT NULL DEFAULT ''")
@@ -527,7 +565,9 @@ class SiteDB:
             db.execute("INSERT INTO sessions (token_hash, user_id, csrf_token, created_at, last_seen, ip, user_agent) "
                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
                        (_hash_token(token), user_id, csrf, now, now, ip[:64], user_agent[:200]))
-        return Session(token, user_id, name, role, csrf, now, now, ip[:64], user_agent[:200], _hash_token(token), mfa)
+            canceled = _mark_active(db, user_id, name, now)
+        return Session(token, user_id, name, role, csrf, now, now, ip[:64], user_agent[:200], _hash_token(token), mfa,
+                       canceled)
 
     def mfa_pending(self, challenge: str) -> Optional[str]:
         """The username a live sign-in challenge belongs to, or None."""
@@ -691,8 +731,9 @@ class SiteDB:
                 db.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
                 return None
             db.execute("UPDATE sessions SET last_seen = ? WHERE token_hash = ?", (now, token_hash))
+            canceled = _mark_active(db, int(row["user_id"]), row["username"], now)
         return Session("", int(row["user_id"]), row["username"], row["role"], row["csrf_token"], row["created_at"],
-                       now, row["ip"], row["user_agent"], token_hash, bool(row["mfa"]))
+                       now, row["ip"], row["user_agent"], token_hash, bool(row["mfa"]), canceled)
 
     def end_session(self, token: str, ip: str = "", user_agent: str = "") -> None:
         with self._connect() as db:
@@ -807,6 +848,135 @@ class SiteDB:
         with self._connect() as db:
             db.execute("DELETE FROM case_members WHERE case_id = ? AND role != 'owner' AND "
                        "user_id = (SELECT id FROM users WHERE username = ?)", (case_id, normalize_username(username)))
+
+    # Succession: who takes over if this person goes down
+
+    def set_successor(self, user_id: int, successor: str, inactive_days: int, wait_days: int) -> None:
+        """Name (or change) the person who takes over this account's cases, and the admin role if it has it.
+
+        Raises:
+            ValueError: an unknown, unapproved or same person, a successor without two-factor sign-in, or
+                timings that aren't offered.
+        """
+        if inactive_days not in SUCCESSION_INACTIVE_DAYS or wait_days not in SUCCESSION_WAIT_DAYS:
+            raise ValueError("pick one of the offered inactivity and waiting periods")
+        target = self.user(successor)
+        if target is None or target["status"] != "active":
+            raise ValueError(f"no approved user {normalize_username(successor)!r}")
+        if target["id"] == user_id:
+            raise ValueError("you can't be your own successor")
+        if not target["mfa"]:
+            raise ValueError(f"{target['username']} needs two-factor sign-in turned on first: a successor's "
+                             "account is as valuable as yours")
+        now = self.clock()
+        with self._connect() as db:
+            db.execute("INSERT INTO successions (user_id, successor_id, inactive_days, wait_days, created_at) "
+                       "VALUES (?, ?, ?, ?, ?) ON CONFLICT (user_id) DO UPDATE SET successor_id = excluded.successor_id, "
+                       "inactive_days = excluded.inactive_days, wait_days = excluded.wait_days, state = 'designated', "
+                       "requested_at = NULL, requested_by = '', due_at = NULL, completed_at = NULL, "
+                       "created_at = excluded.created_at", (user_id, target["id"], inactive_days, wait_days, now))
+            self._log_for(db, user_id, "successor_named")
+
+    def remove_successor(self, user_id: int) -> bool:
+        with self._connect() as db:
+            removed = db.execute("DELETE FROM successions WHERE user_id = ?", (user_id,)).rowcount > 0
+            if removed:
+                self._log_for(db, user_id, "successor_removed")
+        return removed
+
+    def decline_succession(self, primary_id: int, successor_id: int) -> bool:
+        """The successor steps down: the designation is removed."""
+        with self._connect() as db:
+            gone = db.execute("DELETE FROM successions WHERE user_id = ? AND successor_id = ? AND state != 'completed'",
+                              (primary_id, successor_id)).rowcount > 0
+            if gone:
+                self._log_for(db, primary_id, "successor_declined")
+        return gone
+
+    def succession(self, user_id: int) -> Optional[sqlite3.Row]:
+        """This account's designation (who succeeds it), with both usernames."""
+        with self._connect() as db:
+            return db.execute(_SUCCESSION_SQL + "WHERE s.user_id = ?", (user_id,)).fetchone()
+
+    def successions_naming(self, successor_id: int) -> list[sqlite3.Row]:
+        """The accounts that named this person as their successor."""
+        with self._connect() as db:
+            return db.execute(_SUCCESSION_SQL + "WHERE s.successor_id = ? ORDER BY p.username",
+                              (successor_id,)).fetchall()
+
+    def all_successions(self) -> list[sqlite3.Row]:
+        with self._connect() as db:
+            return db.execute(_SUCCESSION_SQL + "ORDER BY p.username").fetchall()
+
+    def request_handover(self, primary_id: int, requested_by: str) -> float:
+        """Start the waiting period. ``requested_by`` is ``"inactivity"`` or the successor's username.
+
+        Returns when the handover will complete unless the primary is active or cancels it first.
+        """
+        now = self.clock()
+        with self._connect() as db:
+            row = db.execute("SELECT wait_days, state FROM successions WHERE user_id = ?", (primary_id,)).fetchone()
+            if row is None or row["state"] != "designated":
+                raise ValueError("there's no handover to request (or one is already under way)")
+            due = now + row["wait_days"] * 86400
+            db.execute("UPDATE successions SET state = 'pending', requested_at = ?, requested_by = ?, due_at = ? "
+                       "WHERE user_id = ?", (now, requested_by[:64], due, primary_id))
+            self._log_for(db, primary_id, "handover_requested")
+        return due
+
+    def cancel_handover(self, primary_id: int) -> bool:
+        with self._connect() as db:
+            canceled = db.execute("UPDATE successions SET state = 'designated', requested_at = NULL, requested_by = '', "
+                                  "due_at = NULL WHERE user_id = ? AND state = 'pending'", (primary_id,)).rowcount > 0
+            if canceled:
+                self._log_for(db, primary_id, "handover_canceled")
+        return canceled
+
+    def inactive_designations(self) -> list[sqlite3.Row]:
+        """Designations whose primary has been inactive past their limit, with no handover under way yet."""
+        now = self.clock()
+        with self._connect() as db:
+            return db.execute(_SUCCESSION_SQL + "WHERE s.state = 'designated' AND p.status = 'active' "
+                              "AND COALESCE(p.last_active_at, p.created_at) < ? - s.inactive_days * 86400",
+                              (now,)).fetchall()
+
+    def due_handovers(self) -> list[sqlite3.Row]:
+        now = self.clock()
+        with self._connect() as db:
+            return db.execute(_SUCCESSION_SQL + "WHERE s.state = 'pending' AND s.due_at <= ?", (now,)).fetchall()
+
+    def complete_handover(self, primary_id: int) -> list[str]:
+        """Hand the primary's cases (and the admin role, if they have it) to the successor. Returns the case ids.
+
+        The primary stays on every case as an editor, so a primary who comes back still has their work and
+        can be made owner again by the successor or an admin.
+        """
+        now = self.clock()
+        with self._connect() as db:
+            row = db.execute("SELECT s.successor_id, s.state, p.role, q.status AS successor_status FROM successions s "
+                             "JOIN users p ON p.id = s.user_id JOIN users q ON q.id = s.successor_id "
+                             "WHERE s.user_id = ?", (primary_id,)).fetchone()
+            if row is None or row["state"] != "pending" or row["successor_status"] != "active":
+                raise ValueError("no handover to complete (or the successor's account isn't active)")
+            successor_id = row["successor_id"]
+            cases = [r["case_id"] for r in db.execute(
+                "SELECT case_id FROM case_members WHERE user_id = ? AND role = 'owner'", (primary_id,))]
+            for case_id in cases:
+                db.execute("UPDATE case_members SET role = 'editor' WHERE case_id = ? AND user_id = ?",
+                           (case_id, primary_id))
+                db.execute("INSERT INTO case_members (case_id, user_id, role) VALUES (?, ?, 'owner') "
+                           "ON CONFLICT (case_id, user_id) DO UPDATE SET role = 'owner'", (case_id, successor_id))
+            if row["role"] == "admin":
+                db.execute("UPDATE users SET role = 'admin' WHERE id = ?", (successor_id,))
+            db.execute("UPDATE successions SET state = 'completed', completed_at = ? WHERE user_id = ?",
+                       (now, primary_id))
+            self._log_for(db, primary_id, "handover_completed")
+        return cases
+
+    def _log_for(self, db: sqlite3.Connection, user_id: int, outcome: str) -> None:
+        name = db.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
+        if name is not None:
+            self._log(db, name["username"], "", "", outcome)
 
     # Recorder tokens (the browser extension)
 

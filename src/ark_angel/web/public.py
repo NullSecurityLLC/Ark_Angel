@@ -205,6 +205,8 @@ def login():
                 resp.set_cookie(MFA_COOKIE, result.token, max_age=MFA_TIMEOUT_S, httponly=True, samesite="Strict",
                                 secure=current_app.config["SECURE_COOKIES"], path="/login")
                 return resp
+            if result.handover_canceled:  # signing in is the answer to "are they gone?"
+                current_app.extensions["ark_handover_canceled"](result.user_id)
             return current_app.extensions["ark_start_session"](redirect(target), result.token)
     notice = LOGIN_NOTICES.get(request.args.get("notice", ""), "")
     return render_template("login.html", error=error, next=target, notice=notice), status
@@ -230,6 +232,8 @@ def login_code():
                 resp.delete_cookie(MFA_COOKIE, path="/login")
                 return resp
         else:
+            if session.handover_canceled:
+                current_app.extensions["ark_handover_canceled"](session.user_id)
             resp = current_app.extensions["ark_start_session"](redirect(target), session.token)
             resp.delete_cookie(MFA_COOKIE, path="/login")
             return resp
