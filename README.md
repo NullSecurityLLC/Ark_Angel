@@ -484,6 +484,12 @@ Security, in brief:
 - Pages run no JavaScript and carry a strict Content-Security-Policy.
 - The container runs unprivileged on a read-only filesystem.
 
+**If you go down, a successor takes over.** On your account page, name a trusted member with two-factor
+sign-in on. If you're inactive for a while (14–90 days you choose), or they ask, a handover starts. Your cases and
+admin role pass to them only after a waiting period (2–30 days) that's emailed to you, and anything you do on the
+site cancels it. See [docs/succession.md](docs/succession.md), which also covers what to write down for the server
+itself: hosting, domain and the backup key.
+
 Optional email notifications (new account requests and profiles to review for admins; approvals and new tips for members) work with any SMTP provider. They never contain tip details, names or contact information, just a link.
 
 Nightly backups are encrypted with your own [age](https://age-encryption.org) key (the server can lock them but never open them) and copied off-site with rclone (Backblaze B2, S3, R2, SFTP...). A failed backup emails the admins, and `web restore` brings one back.

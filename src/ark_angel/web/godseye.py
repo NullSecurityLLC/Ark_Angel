@@ -67,12 +67,15 @@ def start_watcher(site, base_url: str, interval_s: int = WATCH_INTERVAL_S,
     """Run :func:`sweep_site` every ``interval_s`` seconds on a daemon thread."""
     stop = stop or threading.Event()
 
+    from ark_angel.web.succession import sweep_succession
+
     def run() -> None:
         while not stop.wait(interval_s):
-            try:
-                sweep_site(site, base_url)
-            except Exception:  # never let one bad case file stop the watching
-                log.exception("God's Eye sweep failed; trying again next round")
+            for name, sweep in (("God's Eye", sweep_site), ("succession", sweep_succession)):
+                try:
+                    sweep(site, base_url)
+                except Exception:  # never let one bad case file stop the watching
+                    log.exception("%s sweep failed; trying again next round", name)
 
     thread = threading.Thread(target=run, name="ark-angel-godseye", daemon=True)
     thread.start()

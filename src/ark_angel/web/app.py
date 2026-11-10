@@ -130,6 +130,8 @@ def create_app(store: FileCaseStore, db: SiteDB, base_dir: Optional[Path] = None
             if origin and origin != "null" and _host_only(urlsplit(origin).netloc) not in hosts:
                 abort(400)
         g.session = db.session(request.cookies.get(SESSION_COOKIE, ""))
+        if g.session is not None and g.session.handover_canceled:
+            _handover_canceled(g.session.user_id)
         if request.endpoint is None or request.endpoint == "static":
             return None  # Flask answers 404/405 itself; static files are public
         if request.blueprint in PRIVATE_BLUEPRINTS and g.session is None:
@@ -149,6 +151,16 @@ def create_app(store: FileCaseStore, db: SiteDB, base_dir: Optional[Path] = None
                 abort(403)
             return redirect(url_for("workspace.account", notice="2fa_required") + "#two-factor")
         return None
+
+    def _handover_canceled(user_id: int) -> None:
+        from ark_angel.web.succession import notify_canceled
+
+        row = db.succession(user_id)
+        if row is not None:
+            notify_canceled(app.extensions["ark_site"], row, url_for("workspace.account", _external=True)
+                            + "#succession")
+
+    app.extensions["ark_handover_canceled"] = _handover_canceled
 
     def must_have_2fa(session) -> bool:
         return require_2fa == "everyone" or (require_2fa == "admins" and session.is_admin)

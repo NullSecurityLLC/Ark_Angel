@@ -19,7 +19,7 @@ from ark_angel.cases.store import CASE_ID_PATTERN, CaseNotFoundError
 from ark_angel.models import Case
 from ark_angel.web import notify
 from ark_angel.web.app import SESSION_COOKIE, client_ip, report_csp, site, user_agent
-from ark_angel.web.db import CASE_RANK, validate_password
+from ark_angel.web.db import CASE_RANK, SUCCESSION_INACTIVE_DAYS, SUCCESSION_WAIT_DAYS, validate_password
 from ark_angel.web.public import TIP_SOURCE
 from ark_angel.web.site import UploadError, photo_kind, save_evidence_photo, save_profile_photo, save_upload
 
@@ -51,6 +51,11 @@ NOTICES = {
     "shared": "Sharing updated.",
     "signed_out_others": "Your other sessions were signed out.",
     "email": "Email settings saved.",
+    "successor_named": "Successor saved. They were told by email (if they gave an address).",
+    "successor_removed": "You no longer have a successor.",
+    "handover_canceled": "Handover canceled. Your cases stay yours.",
+    "handover_requested": "Handover requested. It completes after the waiting period unless they sign in or cancel.",
+    "succession_declined": "You stepped down as their successor.",
     "2fa_required": "This site requires two-factor sign-in for your account. Set it up below to carry on.",
     "ge_armed": "God's Eye is on standby.",
     "ge_active": "God's Eye is ACTIVE. The emergency contacts and the case team were alerted.",
@@ -527,7 +532,7 @@ def delete_case(case_id: str):
 
 
 def _render_account(error: str = "", email_error: str = "", notice_text: str = "", mfa_error: str = "",
-                    setup: bool = False, recovery_codes: list | None = None):
+                    setup: bool = False, recovery_codes: list | None = None, succession_error: str = ""):
     from ark_angel.web import totp
 
     s = site()
@@ -542,8 +547,12 @@ def _render_account(error: str = "", email_error: str = "", notice_text: str = "
                            notice=notice_text, mfa_error=mfa_error, setup=setup, qr=qr,
                            secret=totp.grouped(secret) if secret else "", recovery_codes=recovery_codes or [],
                            codes_left=s.db.recovery_codes_left(g.session.user_id),
-                           mfa_required=current_app.extensions["ark_must_have_2fa"](g.session))
-    return page, 400 if error or email_error or mfa_error else 200
+                           mfa_required=current_app.extensions["ark_must_have_2fa"](g.session),
+                           succession=s.db.succession(g.session.user_id),
+                           naming_me=s.db.successions_naming(g.session.user_id),
+                           inactive_options=SUCCESSION_INACTIVE_DAYS, wait_options=SUCCESSION_WAIT_DAYS,
+                           succession_error=succession_error)
+    return page, 400 if error or email_error or mfa_error or succession_error else 200
 
 
 def _sentence(exc: Exception) -> str:
@@ -637,6 +646,79 @@ def set_email():
     except ValueError as exc:
         return _render_account(email_error=str(exc)[:1].upper() + str(exc)[1:] + ".")
     return redirect(url_for("workspace.account", notice="email"))
+
+
+# Succession: who takes over if this person goes down
+
+
+def _confirm_identity() -> str:
+    """Password, plus the two-factor code when it's on. Returns what was wrong, or ""."""
+    s = site()
+    if not s.db.check_password(g.session.user_id, request.form.get("password", "")):
+        return "Your password is wrong."
+    if g.session.mfa and not s.db.check_second_factor(g.session.user_id, request.form.get("code", "")[:64]):
+        return "That two-factor code didn't work."
+    return ""
+
+
+@bp.post("/account/succession")
+def succession():
+    from ark_angel.web.succession import notify_canceled, notify_named
+
+    s = site()
+    action = request.form.get("action", "")
+    link = url_for("workspace.account", _external=True) + "#succession"
+    if action == "cancel":
+        row = s.db.succession(g.session.user_id)
+        if s.db.cancel_handover(g.session.user_id) and row is not None:
+            notify_canceled(s, row, link)
+        return redirect(url_for("workspace.account", notice="handover_canceled") + "#succession")
+    problem = _confirm_identity()
+    if problem:
+        return _render_account(succession_error=problem)
+    if action == "remove":
+        s.db.remove_successor(g.session.user_id)
+        return redirect(url_for("workspace.account", notice="successor_removed") + "#succession")
+    if action != "set":
+        abort(400)
+    try:
+        s.db.set_successor(g.session.user_id, request.form.get("successor", "")[:64],
+                           int(request.form.get("inactive_days", "0") or 0), int(request.form.get("wait_days", "0") or 0))
+    except ValueError as exc:
+        return _render_account(succession_error=str(exc)[:1].upper() + str(exc)[1:] + ".")
+    notify_named(s, s.db.succession(g.session.user_id), link)
+    return redirect(url_for("workspace.account", notice="successor_named") + "#succession")
+
+
+@bp.post("/account/succession/<primary>")
+def succession_as_successor(primary: str):
+    """The successor's side: ask for the handover early, or step down."""
+    from ark_angel.web.succession import notify_requested
+
+    s = site()
+    user = s.db.user(primary)
+    row = s.db.succession(user["id"]) if user else None
+    if row is None or row["successor_id"] != g.session.user_id or row["state"] == "completed":
+        abort(404)
+    action = request.form.get("action", "")
+    if action == "decline":
+        s.db.decline_succession(row["user_id"], g.session.user_id)
+        return redirect(url_for("workspace.account", notice="succession_declined") + "#succession")
+    if action != "request":
+        abort(400)
+    # Asking early is the one step an attacker on the successor's account would want: re-check them, fully.
+    if not g.session.mfa:
+        return _render_account(succession_error="Turn on two-factor sign-in before you can ask for a handover.")
+    problem = _confirm_identity()
+    if problem:
+        return _render_account(succession_error=problem)
+    try:
+        due = s.db.request_handover(row["user_id"], g.session.username)
+    except ValueError as exc:
+        return _render_account(succession_error=str(exc)[:1].upper() + str(exc)[1:] + ".")
+    notify_requested(s, {**dict(row), "requested_by": g.session.username}, due,
+                     url_for("workspace.account", _external=True) + "#succession")
+    return redirect(url_for("workspace.account", notice="handover_requested") + "#succession")
 
 
 @bp.post("/account/sign-out-others")

@@ -56,6 +56,70 @@ case evidence: it's worth the ten seconds.</p>
 {% endif %}
 </section>
 
+<section id="succession">
+<h2>If you go down: succession</h2>
+{% if succession_error %}<p class="alert" role="alert">{{ succession_error }}</p>{% endif %}
+{% if me.handover_canceled %}
+<div class="alarm-banner" role="alert">
+  <b>A handover of your cases to {{ succession.successor_name if succession else "your successor" }} was under way.</b>
+  You being here canceled it, and your cases stay yours. If you didn't expect a handover, check who your successor is
+  below and change your password.
+</div>
+{% endif %}
+{% if succession and succession.state == 'designated' %}
+<p><span class="tag live">set</span> If you're inactive for <b>{{ succession.inactive_days }} days</b>, or
+<b>{{ succession.successor_name }}</b> asks, your cases pass to them after a <b>{{ succession.wait_days }}-day</b>
+waiting period{% if me.is_admin %}, and so does your admin role{% endif %}. You're emailed when it starts, and
+signing in cancels it.</p>
+{% elif succession and succession.state == 'completed' %}
+<p>Your cases were handed to {{ succession.successor_name }} on {{ succession.completed_at|when }}. You're an editor on
+each. Name a successor again below if you like.</p>
+{% else %}
+<p>Name someone you trust to take over your cases{% if me.is_admin %}, and your admin role{% endif %}, if you're
+gone: not signed in for a while, or they ask and you don't object. Nothing moves until a waiting period passes, and
+anything you do on the site cancels it.</p>
+{% endif %}
+<form method="post" action="{{ url_for('workspace.succession') }}" class="stack narrow-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="successor">Successor (their username; they need two-factor sign-in on)</label>
+  <input id="successor" name="successor" maxlength="64" autocapitalize="none" value="{{ succession.successor_name if succession and succession.state != 'completed' else '' }}">
+  <label for="inactive_days">Hand over after I'm inactive for</label>
+  <select id="inactive_days" name="inactive_days">{% for d in inactive_options %}<option value="{{ d }}"{% if (succession.inactive_days if succession else 30) == d %} selected{% endif %}>{{ d }} days</option>{% endfor %}</select>
+  <label for="wait_days">Waiting period, while I can still cancel</label>
+  <select id="wait_days" name="wait_days">{% for d in wait_options %}<option value="{{ d }}"{% if (succession.wait_days if succession else 7) == d %} selected{% endif %}>{{ d }} days</option>{% endfor %}</select>
+  <label for="sc-password">Your password</label>
+  <input id="sc-password" name="password" type="password" autocomplete="current-password" required maxlength="1024">
+  {% if user.mfa %}<label for="sc-code">Two-factor code</label>
+  <input id="sc-code" name="code" autocomplete="one-time-code" inputmode="numeric" required maxlength="64">{% endif %}
+  <div class="btn-row">
+    <button name="action" value="set" class="btn primary">Save successor</button>
+    {% if succession and succession.state == 'designated' %}<button name="action" value="remove" class="btn ghost">Remove successor</button>{% endif %}
+  </div>
+</form>
+<p class="fine">Pick a long enough waiting period that you'd notice an email in time: a successor's account getting
+taken over is how this could be abused. Every step is emailed and logged.</p>
+
+{% if naming_me %}
+<h3>You're the successor for</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Who</th><th>Last active</th><th>Status</th><th></th></tr></thead>
+<tbody>{% for r in naming_me %}<tr>
+  <td class="mono">{{ r.primary_name }}</td>
+  <td class="mono">{{ r.primary_last_active|when }}</td>
+  <td>{% if r.state == 'pending' %}<span class="tag alarm">handover {{ r.due_at|when }}</span>{% elif r.state == 'completed' %}handed over {{ r.completed_at|when }}{% else %}after {{ r.inactive_days }} days inactive + {{ r.wait_days }} days{% endif %}</td>
+  <td>{% if r.state == 'designated' %}
+    <form method="post" action="{{ url_for('workspace.succession_as_successor', primary=r.primary_name) }}" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input name="password" type="password" autocomplete="current-password" placeholder="Password" maxlength="1024">
+      {% if user.mfa %}<input name="code" autocomplete="one-time-code" inputmode="numeric" placeholder="2FA code" maxlength="64">{% endif %}
+      <button name="action" value="request" class="btn small danger">They're down: request handover</button>
+      <button name="action" value="decline" class="btn small ghost">Step down</button>
+    </form>{% endif %}</td>
+</tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+</section>
+
 <section>
 <h2>Active sessions</h2>
 <div class="table-wrap"><table>
